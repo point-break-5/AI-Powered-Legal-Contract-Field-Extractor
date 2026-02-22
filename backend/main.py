@@ -4,11 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.db import create_tables
+from src.api import projects, documents, templates, extraction, review, export
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Runs once on startup — creates DB tables if they don't exist
     create_tables()
     yield
 
@@ -27,6 +27,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Routers
+app.include_router(projects.router)
+app.include_router(documents.router)
+app.include_router(templates.router)
+app.include_router(extraction.router)
+app.include_router(review.router)
+app.include_router(export.router)
 
 
 @app.get("/")
