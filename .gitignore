@@ -1,7 +1,8 @@
 # ---- Frontend (Next.js) ----
 frontend/node_modules/
 frontend/.next/
-frontend/.env*.local
+frontend/.env
+frontend/.env.local
 frontend/out/
 
 # ---- Backend (Python / FastAPI) ----
@@ -10,6 +11,14 @@ backend/*.py[cod]
 backend/.venv/
 backend/venv/
 backend/.env
+backend/*.db
 
 # ---- General ----
 .DS_Store
+
+# ---- Allow example env files to be tracked ----
+!backend/.env.example
+!frontend/.env.example
+
+# ---- Personal planning (do not commit) ----
+TODO.txt
