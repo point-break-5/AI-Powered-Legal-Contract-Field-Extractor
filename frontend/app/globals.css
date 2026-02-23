@@ -1,26 +1,78 @@
 @import "tailwindcss";
 
+/* ── ShobyoShachi Design System ── */
+@theme {
+  --font-sans: var(--font-kumbh), system-ui, sans-serif;
+
+  /* Ash palette as Tailwind colors */
+  --color-ash-white: #fafafa;
+  --color-ash-light: #f5f5f5;
+  --color-ash-gray: #e8e8e8;
+  --color-ash-medium: #d0d0d0;
+  --color-ash-dark: #a8a8a8;
+  --color-ash-charcoal: #6b6b6b;
+  --color-ash-deep: #4a4a4a;
+  --color-ash-black: #2a2a2a;
+  --color-accent-blue: #5b7fe5;
+  --color-accent-teal: #4ecdc4;
+  --color-accent-coral: #ff8a80;
+  --color-accent-amber: #ffd54f;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* CSS custom properties for var() usage */
+  --ash-white: #fafafa;
+  --ash-light: #f5f5f5;
+  --ash-gray: #e8e8e8;
+  --ash-medium: #d0d0d0;
+  --ash-dark: #a8a8a8;
+  --ash-charcoal: #6b6b6b;
+  --ash-deep: #4a4a4a;
+  --ash-black: #2a2a2a;
+  --accent-blue: #5b7fe5;
+  --accent-teal: #4ecdc4;
+  --accent-coral: #ff8a80;
+  --accent-amber: #ffd54f;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --spacing-base: 0.625rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--ash-white);
+  color: var(--ash-charcoal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Thin scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--ash-light); }
+::-webkit-scrollbar-thumb { background: var(--ash-medium); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ash-dark); }
+
+/* Fade-in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.25s ease-out; }
+
+/* Shimmer for loading skeletons */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--ash-light) 25%, var(--ash-gray) 50%, var(--ash-light) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
 }
