@@ -101,6 +101,43 @@ class ReviewUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+
+class FieldAccuracy(BaseModel):
+    field_key: str
+    total: int
+    matched: int
+    accuracy_pct: float
+
+
+class SideBySideRow(BaseModel):
+    document: str
+    field_key: str
+    expected_value: str
+    ai_value: Optional[str]
+    normalized_value: Optional[str]
+    match: bool
+
+
+class EvaluationReport(BaseModel):
+    project_id: int
+    total_labels: int
+    total_matched: int
+    overall_accuracy_pct: float
+    overall_coverage_pct: float
+    normalization_validity_pct: float
+    per_field: list[FieldAccuracy]
+    side_by_side: list[SideBySideRow]
+
+
+# ---------------------------------------------------------------------------
+# Table (docs × fields matrix)
+# ---------------------------------------------------------------------------
+
+
 class TableCell(BaseModel):
     record_id: Optional[int]
     value: Optional[str]

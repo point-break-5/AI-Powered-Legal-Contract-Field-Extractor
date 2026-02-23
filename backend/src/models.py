@@ -143,3 +143,16 @@ class ExtractionRecord(Base):
     @citations.setter
     def citations(self, value: list) -> None:
         self.citations_json = json.dumps(value)
+
+
+class EvaluationLabel(Base):
+    """Human-labeled ground truth for evaluating extraction quality."""
+
+    __tablename__ = "evaluation_labels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    document_filename = Column(String(500), nullable=False)
+    field_key = Column(String(255), nullable=False)
+    expected_value = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
