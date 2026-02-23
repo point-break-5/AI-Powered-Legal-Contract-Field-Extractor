@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,17 +13,22 @@ router = APIRouter(prefix="/projects", tags=["extraction"])
 class SingleExtractionRequest(BaseModel):
     document_id: int
     field_key: str
+    provider: str = "gemini"
 
 
 @router.post("/{project_id}/extract/all", response_model=list[ExtractionRecordResponse])
-def trigger_extract_all(project_id: int, db: Session = Depends(get_db)):
+def trigger_extract_all(
+    project_id: int,
+    provider: str = Query(default="gemini", description="LLM provider: gemini | grok | deepseek"),
+    db: Session = Depends(get_db),
+):
     """Extract all fields × all parsed documents in the project."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
-        records = extract_all(db=db, project_id=project_id)
+        records = extract_all(db=db, project_id=project_id, provider=provider)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
@@ -64,6 +69,7 @@ def trigger_extract_single(
             field_key=payload.field_key,
             field_type=field_def.get("type", "text"),
             field_description=field_def.get("description", ""),
+            provider=payload.provider,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

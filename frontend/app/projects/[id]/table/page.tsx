@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink } from 'lucide-react';
-import { api, type TableCell, type TableData, type ExtractionRecord } from '@/lib/api';
+import { api, type TableCell, type TableData, type ExtractionRecord, type LLMProvider, LLM_PROVIDER_LABELS } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
@@ -27,6 +27,7 @@ export default function TablePage() {
   const [reviewing, setReviewing] = useState(false);
   const [manualValue, setManualValue] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [provider, setProvider] = useState<LLMProvider>('gemini');
   const panelRef = useRef<HTMLDivElement>(null);
 
   const loadTable = useCallback(() => {
@@ -43,7 +44,7 @@ export default function TablePage() {
     setExtracting(true);
     setError('');
     try {
-      await api.extraction.extractAll(projectId);
+      await api.extraction.extractAll(projectId, provider);
       loadTable();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Extraction failed');
@@ -108,6 +109,16 @@ export default function TablePage() {
               Excel
             </Button>
           </a>
+          <select
+            value={provider}
+            onChange={e => setProvider(e.target.value as LLMProvider)}
+            className="text-xs px-2.5 py-1.5 rounded-[var(--radius-md)] border border-[var(--ash-gray)] bg-white text-[var(--ash-charcoal)] focus:outline-none focus-visible:border-[var(--accent-blue)] focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)]/30 transition shrink-0 cursor-pointer"
+            title="LLM Provider"
+          >
+            {(Object.entries(LLM_PROVIDER_LABELS) as [LLMProvider, string][]).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
           <Button size="sm" loading={extracting} onClick={handleExtractAll}>
             <Zap size={13} />
             Re-extract All

@@ -109,6 +109,14 @@ export interface EvaluationReport {
   }[];
 }
 
+export type LLMProvider = 'gemini' | 'grok' | 'deepseek';
+
+export const LLM_PROVIDER_LABELS: Record<LLMProvider, string> = {
+  gemini: 'Gemini 2.5 Flash',
+  grok: 'Grok (xAI)',
+  deepseek: 'DeepSeek Chat',
+};
+
 // ---------------------------------------------------------------------------
 // Core fetch helper
 // ---------------------------------------------------------------------------
@@ -174,12 +182,13 @@ export const api = {
   },
 
   extraction: {
-    extractAll: (projectId: number) =>
-      request<ExtractionRecord[]>('POST', `/projects/${projectId}/extract/all`),
-    extractField: (projectId: number, document_id: number, field_key: string) =>
+    extractAll: (projectId: number, provider: LLMProvider = 'gemini') =>
+      request<ExtractionRecord[]>('POST', `/projects/${projectId}/extract/all?provider=${provider}`),
+    extractField: (projectId: number, document_id: number, field_key: string, provider: LLMProvider = 'gemini') =>
       request<ExtractionRecord>('POST', `/projects/${projectId}/extract/field`, {
         document_id,
         field_key,
+        provider,
       }),
   },
 

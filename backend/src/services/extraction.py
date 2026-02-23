@@ -39,6 +39,7 @@ def extract_single(
     field_key: str,
     field_type: str,
     field_description: str,
+    provider: str = "gemini",
 ) -> ExtractionRecord:
     """Extract one field from one document and persist the result."""
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -55,6 +56,7 @@ def extract_single(
             field_key=field_key,
             field_type=field_type,
             field_description=field_description,
+            provider=provider,
         )
         record.value = result["value"]
         record.raw_text = result["raw_text"]
@@ -80,7 +82,7 @@ def extract_single(
     return record
 
 
-def extract_all(db: Session, project_id: int) -> list[ExtractionRecord]:
+def extract_all(db: Session, project_id: int, provider: str = "gemini") -> list[ExtractionRecord]:
     """Extract all fields × all documents for a project. Skips non-DONE documents."""
     template = (
         db.query(FieldTemplate).filter(FieldTemplate.project_id == project_id).first()
@@ -108,6 +110,7 @@ def extract_all(db: Session, project_id: int) -> list[ExtractionRecord]:
                     field_key=field["key"],
                     field_type=field.get("type", "text"),
                     field_description=field.get("description", ""),
+                    provider=provider,
                 )
                 results.append(record)
             except Exception as e:
