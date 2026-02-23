@@ -14,6 +14,7 @@ backend/.venv/
 backend/venv/
 backend/.env
 backend/*.db
+backend/uploads/
 
 # ---- General ----
 .DS_Store
@@ -24,3 +25,4 @@ backend/*.db
 
 # ---- Personal planning (do not commit) ----
 TODO.txt
+backend_notes.txt
