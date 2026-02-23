@@ -7,17 +7,17 @@ The system is a full-stack Legal Tabular Review application with three logical t
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Browser                              │
-│  Next.js 16 App Router  ·  TypeScript  ·  Tailwind CSS v4  │
+│  Next.js 16 App Router  ·  TypeScript  ·  Tailwind CSS v4   │
 └────────────────────────────┬────────────────────────────────┘
                              │ HTTP (REST, JSON)
                              │ localhost:3000 → localhost:8000
 ┌────────────────────────────▼────────────────────────────────┐
 │                      FastAPI Backend                        │
-│  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐ │
-│  │  API Routers │  │   Services    │  │   Data Layer     │ │
-│  │  (7 modules) │  │  parser / llm │  │  SQLAlchemy ORM  │ │
-│  │              │  │  extraction   │  │  SQLite DB       │ │
-│  └──────┬───────┘  └──────┬────────┘  └──────────────────┘ │
+│  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐  │
+│  │  API Routers │  │   Services    │  │   Data Layer     │  │
+│  │  (7 modules) │  │  parser / llm │  │  SQLAlchemy ORM  │  │
+│  │              │  │  extraction   │  │  SQLite DB       │  │
+│  └──────┬───────┘  └──────┬────────┘  └──────────────────┘  │
 └─────────┼─────────────────┼───────────────────────────────-─┘
           │                 │ HTTPS
           │                 ▼
@@ -271,18 +271,18 @@ backend/
                      ▼                                      │
               [extract/all or extract/field]                │
                      │                                      │
-          ┌──────────┴──────────┐                          │
-          ▼                     ▼                          │
-     [PENDING]           [MISSING_DATA]                    │
-  (value found,       (null value OR conf < 0.3)           │
-   awaiting review)                                        │
-          │                                                │
-    ┌─────┼──────────────┐                                 │
-    ▼     ▼              ▼                                 │
-[CONFIRMED] [REJECTED] [MANUAL_UPDATED]                    │
-                           (manual_value stored)           │
-                                                           │
-  Template update (version bump) → all above records ──────┘
+          ┌──────────┴──────────┐                           │
+          ▼                     ▼                           │
+     [PENDING]           [MISSING_DATA]                     │
+  (value found,       (null value OR conf < 0.3)            │
+   awaiting review)                                         │
+          │                                                 │
+    ┌─────┼──────────────┐                                  │
+    ▼     ▼              ▼                                  │
+[CONFIRMED] [REJECTED] [MANUAL_UPDATED]                     │
+                           (manual_value stored)            │
+                                                            │
+  Template update (version bump) → all above records ───────┘
 ```
 
 ### 5.3 Project Status
