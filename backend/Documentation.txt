@@ -1,0 +1,789 @@
+================================================================================
+  AI-POWERED LEGAL CONTRACT FIELD EXTRACTOR — BACKEND DOCUMENTATION
+================================================================================
+
+  Base URL (dev) : http://localhost:8000
+  Interactive API: http://localhost:8000/docs   (Swagger UI)
+  Alt API docs   : http://localhost:8000/redoc  (ReDoc)
+
+  Start server   : uvicorn main:app --reload  (from backend/)
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+  1.  Architecture Overview
+  2.  Setup & Configuration
+  3.  Database Schema
+  4.  Enum Reference
+  5.  API Endpoints
+      5.1  Health
+      5.2  Projects
+      5.3  Documents
+      5.4  Field Templates
+      5.5  Extraction
+      5.6  Review
+      5.7  Table View
+      5.8  Export
+      5.9  Evaluation
+  6.  Common Error Codes
+  7.  Typical Workflow (end-to-end example)
+  8.  LLM & Extraction Internals
+  9.  Smoke Test
+
+================================================================================
+1. ARCHITECTURE OVERVIEW
+================================================================================
+
+  backend/
+  ├── main.py                  FastAPI app, CORS, lifespan (creates DB tables)
+  ├── smoke_test.py            Stand-alone script to test parsing + extraction
+  ├── requirements.txt         Python dependencies
+  ├── .env                     GEMINI_API_KEY, DATABASE_URL  (NOT committed)
+  ├── .env.example             Template for .env
+  ├── uploads/                 Raw uploaded files  (auto-created, NOT committed)
+  ├── legal_extractor.db       SQLite database     (auto-created, NOT committed)
+  └── src/
+      ├── models.py            SQLAlchemy ORM models
+      ├── db.py                Engine, SessionLocal, get_db(), create_tables()
+      ├── schemas.py           Pydantic v2 request/response schemas
+      ├── utils.py             SUPPORTED_FORMATS, file-extension helpers
+      ├── api/
+      │   ├── projects.py      Project CRUD
+      │   ├── documents.py     Upload, parse, list, delete documents
+      │   ├── templates.py     Field template upsert / get / delete
+      │   ├── extraction.py    Trigger LLM extraction (all or single field)
+      │   ├── review.py        Review records + table matrix endpoint
+      │   ├── export.py        CSV / Excel file download
+      │   └── evaluation.py    Upload ground truth + accuracy report
+      └── services/
+          ├── parser.py        PDF / DOCX / HTML / TXT text parsers
+          ├── llm.py           Gemini 2.0 Flash client with retry + normalisation
+          └── extraction.py    Orchestrates LLM calls, persists ExtractionRecords
+
+  Stack
+  -----
+  - FastAPI 0.115+  with Uvicorn
+  - SQLAlchemy 2.0  (synchronous, SQLite in dev)
+  - Pydantic v2
+  - google-genai >= 1.0.0  (official Google Gen AI SDK)
+  - PyMuPDF (PDF), python-docx (DOCX), BeautifulSoup4/lxml (HTML), plain text
+  - pandas + openpyxl  (export)
+
+
+================================================================================
+2. SETUP & CONFIGURATION
+================================================================================
+
+  Requirements
+  ------------
+  Python 3.11+ recommended (developed on 3.12.3).
+
+  Install:
+      cd backend
+      python -m venv .venv && source .venv/bin/activate
+      pip install -r requirements.txt
+
+  Environment variables  (backend/.env)
+  -------------------------------------
+      GEMINI_API_KEY=<your_google_gemini_api_key>
+      DATABASE_URL=sqlite:///./legal_extractor.db
+
+  Get a Gemini API key free at https://aistudio.google.com/app/apikey
+
+  Run server
+  ----------
+      uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+  On startup, create_tables() is called via FastAPI lifespan — all tables are
+  created automatically if they don't exist (safe to call multiple times).
+
+
+================================================================================
+3. DATABASE SCHEMA
+================================================================================
+
+  projects
+  --------
+  id           INTEGER  PK
+  name         TEXT     NOT NULL
+  status       ENUM     ProjectStatus  (see §4)
+  created_at   DATETIME
+  updated_at   DATETIME
+
+  documents
+  ---------
+  id           INTEGER  PK
+  project_id   INTEGER  FK → projects.id  (CASCADE DELETE)
+  filename     TEXT     original filename
+  format       TEXT     pdf | docx | html | htm | txt
+  parse_status ENUM     ParseStatus  (see §4)
+  parsed_text  TEXT     extracted plain text (nullable until parsed)
+  created_at   DATETIME
+
+  field_templates                          (one per project, UNIQUE on project_id)
+  ---------------
+  id           INTEGER  PK
+  project_id   INTEGER  FK → projects.id  (CASCADE DELETE)
+  fields_json  TEXT     JSON array of FieldDefinition objects
+  version      INTEGER  incremented on every update
+  updated_at   DATETIME
+
+  extraction_records
+  ------------------
+  id                INTEGER  PK
+  document_id       INTEGER  FK → documents.id  (CASCADE DELETE)
+  field_key         TEXT     matches a key in field_templates.fields_json
+  value             TEXT     raw AI-extracted value  (nullable)
+  raw_text          TEXT     verbatim passage from document (nullable)
+  citations_json    TEXT     JSON array of Citation objects
+  confidence        FLOAT    0.0 – 1.0
+  normalized_value  TEXT     date/amount/entity after normalisation (nullable)
+  review_status     ENUM     ReviewStatus  (see §4)
+  manual_value      TEXT     reviewer override — stored ALONGSIDE value, never
+                             overwrites the AI result
+  created_at        DATETIME
+  updated_at        DATETIME
+
+  evaluation_labels
+  -----------------
+  id                  INTEGER  PK
+  project_id          INTEGER  FK → projects.id  (CASCADE DELETE)
+  document_filename   TEXT     must match Document.filename exactly
+  field_key           TEXT
+  expected_value      TEXT
+  created_at          DATETIME
+
+
+================================================================================
+4. ENUM REFERENCE
+================================================================================
+
+  ProjectStatus
+  -------------
+  PENDING     Project just created, no documents yet
+  PROCESSING  Extraction in progress  (currently unused, reserved)
+  READY       At least one extraction completed
+  ERROR       Unrecoverable project-level error
+
+  ParseStatus
+  -----------
+  QUEUED      Document row created, parsing not started
+  PARSING     Parsing in progress
+  DONE        parsed_text is populated and ready for extraction
+  ERROR       Parsing failed (original file still on disk)
+
+  ReviewStatus
+  ------------
+  PENDING         Extracted, awaiting human review
+  CONFIRMED       Reviewer accepted the AI value
+  REJECTED        Reviewer rejected the AI value (manual_value may be null)
+  MANUAL_UPDATED  Reviewer provided a manual_value alongside the AI result
+  MISSING_DATA    AI returned null value or confidence < 0.30
+  STALE           Template was updated after this record was extracted;
+                  re-extraction recommended
+
+
+================================================================================
+5. API ENDPOINTS
+================================================================================
+
+  ── 5.1  HEALTH ──────────────────────────────────────────────────────────────
+
+  GET /
+  -----
+  Returns a welcome message.
+  Response: { "message": "Welcome to the Legal Contract Field Extractor API" }
+
+  GET /health
+  -----------
+  Returns server health status.
+  Response: { "status": "ok" }
+
+
+  ── 5.2  PROJECTS ────────────────────────────────────────────────────────────
+
+  POST /projects
+  --------------
+  Create a new project.
+
+  Request body (JSON):
+      {
+        "name": "Tesla Q3 Contracts"       // required, any string
+      }
+
+  Response 201:
+      {
+        "id": 1,
+        "name": "Tesla Q3 Contracts",
+        "status": "PENDING",
+        "created_at": "2026-02-23T10:00:00",
+        "updated_at": "2026-02-23T10:00:00"
+      }
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects
+  -------------
+  List all projects (newest first).
+
+  Response 200: Array of ProjectResponse objects (same shape as above).
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}
+  --------------------------
+  Get a single project by ID.
+
+  Response 200: ProjectResponse
+  Response 404: { "detail": "Project not found" }
+
+  ────────────────────────────────────────────────────────────────────────────
+  DELETE /projects/{project_id}
+  -----------------------------
+  Delete a project and ALL its documents, template, and extraction records
+  (cascades automatically via SQLAlchemy).
+
+  Response 204: No content
+  Response 404: { "detail": "Project not found" }
+
+
+  ── 5.3  DOCUMENTS ───────────────────────────────────────────────────────────
+
+  POST /projects/{project_id}/documents
+  --------------------------------------
+  Upload and parse a contract document.
+
+  Request: multipart/form-data
+      file   : binary file upload  (field name must be "file")
+
+  Supported formats: .pdf  .docx  .html  .htm  .txt
+
+  Parsing behaviour:
+      PDF   → PyMuPDF (fitz) — extracts text page by page
+      DOCX  → python-docx — extracts paragraph text
+      HTML  → BeautifulSoup4/lxml — strips <script>/<style>, returns body text
+      TXT   → UTF-8 decode
+
+  Response 201: DocumentResponse
+      {
+        "id": 3,
+        "project_id": 1,
+        "filename": "Supply Agreement.pdf",
+        "format": "pdf",
+        "parse_status": "DONE",
+        "created_at": "2026-02-23T10:05:00"
+      }
+
+  Response 400: unsupported format
+  Response 404: project not found
+  Response 409: duplicate filename in the same project
+  Response 422: file parsed but text extraction failed
+
+  Note: The raw file is saved to  backend/uploads/{project_id}_{filename}.
+        The extracted text is stored in the documents.parsed_text column.
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}/documents
+  -------------------------------------
+  List all documents for a project (oldest first).
+
+  Response 200: Array of DocumentResponse
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}/documents/{document_id}
+  ---------------------------------------------------
+  Get a single document record.
+
+  Response 200: DocumentResponse
+  Response 404: document or project not found
+
+  ────────────────────────────────────────────────────────────────────────────
+  DELETE /projects/{project_id}/documents/{document_id}
+  -------------------------------------------------------
+  Delete a document record from DB and its file from disk.
+
+  Response 204: No content
+  Response 404: document or project not found
+
+
+  ── 5.4  FIELD TEMPLATES ─────────────────────────────────────────────────────
+
+  POST /projects/{project_id}/template
+  -------------------------------------
+  Create or update the extraction template for a project.
+  Calling this on an existing template increments its version and marks ALL
+  current ExtractionRecords for this project as STALE.
+
+  Request body (JSON):
+      {
+        "fields": [
+          {
+            "key":         "effective_date",     // unique identifier, snake_case
+            "type":        "date",               // text | date | amount | entity
+            "description": "The date the agreement takes effect",
+            "required":    true                  // optional, default false
+          },
+          {
+            "key":         "party_a",
+            "type":        "entity",
+            "description": "First named counterparty in the agreement",
+            "required":    true
+          },
+          {
+            "key":         "total_value",
+            "type":        "amount",
+            "description": "Total contract value or payment amount",
+            "required":    false
+          }
+        ]
+      }
+
+  Field types and their normalisation:
+      text    → returned as-is, extra whitespace stripped
+      date    → ISO 8601 (YYYY-MM-DD)
+      amount  → "<numeric> <CURRENCY_CODE>"  e.g.  "1500000.00 USD"
+      entity  → canonical name, suffixes (Inc., Ltd., Corp.) stripped
+
+  Response 200: TemplateResponse
+      {
+        "id": 1,
+        "project_id": 1,
+        "fields": [ { "key": "...", "type": "...", "description": "...", "required": true }, ... ],
+        "version": 2,
+        "updated_at": "2026-02-23T10:10:00"
+      }
+
+  Response 404: project not found
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}/template
+  -------------------------------------
+  Fetch the current field template.
+
+  Response 200: TemplateResponse
+  Response 404: project not found  |  no template defined yet
+
+  ────────────────────────────────────────────────────────────────────────────
+  DELETE /projects/{project_id}/template
+  ----------------------------------------
+  Remove the field template (does NOT delete extraction records).
+
+  Response 204: No content
+  Response 404: template not found
+
+
+  ── 5.5  EXTRACTION ──────────────────────────────────────────────────────────
+
+  POST /projects/{project_id}/extract/all
+  ----------------------------------------
+  Run extraction for ALL fields × ALL documents whose parse_status = DONE.
+
+  No request body required.
+
+  Behaviour:
+  - Iterates every (document, field) pair from the template.
+  - Sends each field as a separate Gemini 2.0 Flash call (see §8).
+  - Creates or updates ExtractionRecord (upsert by document_id + field_key).
+  - STALE records are re-extracted automatically.
+  - If a single field fails, the rest continue; only raises 502 if ALL fail.
+
+  Response 200: Array of ExtractionRecordResponse (see shape below)
+  Response 400: no template defined  |  no parsed documents found
+  Response 502: all LLM calls failed after retries
+
+  ────────────────────────────────────────────────────────────────────────────
+  POST /projects/{project_id}/extract/field
+  ------------------------------------------
+  Extract a single field for a single document.
+
+  Request body (JSON):
+      {
+        "document_id": 3,
+        "field_key":   "effective_date"
+      }
+
+  Response 200: ExtractionRecordResponse
+  Response 400: document not parsed yet  |  no template
+  Response 404: project / field_key not in template
+  Response 502: LLM failed after retries
+
+  ────────────────────────────────────────────────────────────────────────────
+  ExtractionRecordResponse shape (used by extraction, review, and table APIs):
+      {
+        "id":               12,
+        "document_id":      3,
+        "field_key":        "effective_date",
+        "value":            "January 1, 2024",          // raw AI answer
+        "raw_text":         "This Agreement is effective as of January 1, 2024",
+        "citations": [
+          { "page": "1", "excerpt": "effective as of January 1, 2024" }
+        ],
+        "confidence":       0.95,
+        "normalized_value": "2024-01-01",               // ISO 8601 for dates
+        "review_status":    "PENDING",
+        "manual_value":     null,
+        "created_at":       "2026-02-23T10:15:00",
+        "updated_at":       "2026-02-23T10:15:00"
+      }
+
+
+  ── 5.6  REVIEW ──────────────────────────────────────────────────────────────
+
+  POST /projects/{project_id}/records/{record_id}/review
+  -------------------------------------------------------
+  Update the review status of an extraction record.
+
+  Request body (JSON):
+      {
+        "status":       "CONFIRMED",    // CONFIRMED | REJECTED | MANUAL_UPDATED
+        "manual_value": null            // required only for MANUAL_UPDATED
+      }
+
+  Status semantics:
+      CONFIRMED      → Accept the AI value as-is. value/normalized_value unchanged.
+      REJECTED       → Flag the AI value as wrong. manual_value stays null unless
+                       you also provide it.
+      MANUAL_UPDATED → Provide a corrected value in manual_value.  The AI's value
+                       and normalized_value are NEVER overwritten; manual_value
+                       is stored as a separate column alongside the AI result.
+
+  MANUAL_UPDATED example body:
+      { "status": "MANUAL_UPDATED", "manual_value": "2024-03-15" }
+
+  Response 200: ExtractionRecordResponse (updated record)
+  Response 400: invalid status  |  MANUAL_UPDATED without manual_value
+  Response 404: record not found in this project
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}/records
+  ------------------------------------
+  List all extraction records for a project.
+
+  Query parameters:
+      status  (optional)  Filter by ReviewStatus enum value.
+              e.g.  ?status=PENDING   ?status=STALE   ?status=MISSING_DATA
+
+  Response 200: Array of ExtractionRecordResponse, ordered by document_id then field_key
+  Response 400: invalid status filter value
+  Response 404: project not found
+
+
+  ── 5.7  TABLE VIEW ──────────────────────────────────────────────────────────
+
+  GET /projects/{project_id}/table
+  ---------------------------------
+  Return the full extraction matrix: rows = fields, columns = documents.
+
+  Response 200: TableResponse
+      {
+        "project_id": 1,
+        "fields":    ["effective_date", "party_a", "total_value"],
+        "documents": [
+          { "id": 3, "filename": "Supply Agreement.pdf" },
+          { "id": 4, "filename": "EX-10.2.html" }
+        ],
+        "rows": {
+          "effective_date": {
+            "3": {                             // key is str(document_id)
+              "record_id":       12,
+              "value":           "January 1, 2024",
+              "normalized_value":"2024-01-01",
+              "confidence":      0.95,
+              "review_status":   "PENDING",
+              "citations":       [{ "page": "1", "excerpt": "..." }],
+              "manual_value":    null
+            },
+            "4": null                          // null = not yet extracted
+          },
+          "party_a": { ... }
+        }
+      }
+
+  - Only documents with parse_status = DONE appear as columns.
+  - A null cell means no extraction record exists for that (field, document) pair.
+  - document_id keys in "rows" are strings (JSON object keys must be strings).
+
+  Response 404: project not found  |  no template defined
+
+
+  ── 5.8  EXPORT ──────────────────────────────────────────────────────────────
+
+  GET /projects/{project_id}/export?format=csv
+  GET /projects/{project_id}/export?format=xlsx
+  -----------------------------------------------
+  Download extraction results as a flat tabular file.
+
+  Query parameter:
+      format   csv  (default) | xlsx
+
+  CSV/Excel columns:
+      document          Original filename
+      field_key         Field identifier from template
+      ai_value          Raw value returned by Gemini
+      normalized_value  Normalised value (date→ISO, amount→float+code, etc.)
+      confidence        Float 0.0 – 1.0
+      review_status     Current review status
+      manual_value      Human override (if MANUAL_UPDATED), otherwise empty
+      citations         All citations flattened as  "p<page>: <excerpt>; ..."
+
+  Response 200: file download
+      Content-Disposition: attachment; filename="<project_name>_extraction.csv"
+  Response 400: unsupported format string
+  Response 404: project or template not found
+
+  If no extraction records exist yet, an empty (header-only) file is returned.
+  Excel (.xlsx) output has auto-fitted column widths (capped at 80 chars).
+
+
+  ── 5.9  EVALUATION ──────────────────────────────────────────────────────────
+
+  POST /projects/{project_id}/evaluation/upload
+  ----------------------------------------------
+  Upload a CSV of human-labeled ground truth to evaluate AI accuracy.
+  Each call REPLACES all previous labels for this project.
+
+  Request: multipart/form-data
+      file  : CSV file  (field name must be "file")
+
+  Required CSV columns (header row, case-insensitive):
+      document_filename   Must exactly match Document.filename in the project
+      field_key           Must match a field key in the template
+      expected_value      The correct value for this (document, field) pair
+
+  Example CSV content:
+      document_filename,field_key,expected_value
+      Supply Agreement.pdf,effective_date,2024-01-01
+      Supply Agreement.pdf,party_a,Acme Corporation
+      EX-10.2.html,effective_date,2023-06-15
+      EX-10.2.html,governing_law,State of Delaware
+
+  Response 201:
+      { "project_id": 1, "labels_uploaded": 4 }
+
+  Response 400: file is not a CSV
+  Response 404: project not found
+  Response 422: CSV cannot be parsed  |  missing required columns  |  no valid rows
+
+  ────────────────────────────────────────────────────────────────────────────
+  GET /projects/{project_id}/evaluation/report
+  ---------------------------------------------
+  Compare AI extraction results against uploaded labels and return metrics.
+
+  Response 200: EvaluationReport
+      {
+        "project_id":                 1,
+        "total_labels":               20,
+        "total_matched":              16,
+        "overall_accuracy_pct":       80.0,
+        "overall_coverage_pct":       90.0,
+        "normalization_validity_pct": 75.0,
+        "per_field": [
+          {
+            "field_key":    "effective_date",
+            "total":        6,
+            "matched":      5,
+            "accuracy_pct": 83.33
+          },
+          ...
+        ],
+        "side_by_side": [
+          {
+            "document":          "Supply Agreement.pdf",
+            "field_key":         "effective_date",
+            "expected_value":    "2024-01-01",
+            "ai_value":          "January 1, 2024",
+            "normalized_value":  "2024-01-01",
+            "match":             true
+          },
+          ...
+        ]
+      }
+
+  Metric definitions:
+      overall_accuracy_pct
+          % of labels where ai_value (strip + case-insensitive) == expected_value.
+
+      overall_coverage_pct
+          % of labels that have a non-null ai_value (i.e. Gemini found something).
+
+      normalization_validity_pct
+          % of labels (that have a normalized_value) where normalized_value
+          matches expected_value.  Labels without normalized_value are excluded
+          from denominator.
+
+  Response 404: project not found  |  no labels uploaded yet
+
+
+================================================================================
+6. COMMON ERROR CODES
+================================================================================
+
+  400  Bad request         Invalid input (wrong enum value, missing field, etc.)
+  404  Not found           Project / document / template / record does not exist
+  409  Conflict            Duplicate filename within the same project
+  422  Unprocessable       File parsing failure or invalid CSV structure
+  502  Bad gateway         Gemini LLM failed after all retry attempts
+
+
+================================================================================
+7. TYPICAL WORKFLOW (END-TO-END)
+================================================================================
+
+  Step 1 — Create a project
+  ─────────────────────────
+      POST /projects
+      Body: { "name": "Tesla Exec Comp Review" }
+      → saves project.id = 1
+
+  Step 2 — Upload documents
+  ─────────────────────────
+      POST /projects/1/documents        (multipart, file = tsla-ex102_486.htm.pdf)
+      POST /projects/1/documents        (multipart, file = EX-10.2.html)
+      → both return parse_status: "DONE" if text extracted successfully
+
+  Step 3 — Define extraction fields
+  ──────────────────────────────────
+      POST /projects/1/template
+      Body:
+      {
+        "fields": [
+          { "key": "effective_date",  "type": "date",   "description": "Date agreement takes effect", "required": true },
+          { "key": "party_a",         "type": "entity", "description": "First named party",           "required": true },
+          { "key": "party_b",         "type": "entity", "description": "Second named party",          "required": true },
+          { "key": "governing_law",   "type": "text",   "description": "Governing jurisdiction",      "required": false },
+          { "key": "total_value",     "type": "amount", "description": "Total contract value",        "required": false }
+        ]
+      }
+      → version: 1
+
+  Step 4 — Run extraction
+  ────────────────────────
+      POST /projects/1/extract/all
+      → Gemini extracts 5 fields × 2 documents = 10 ExtractionRecords
+      → Returns array of ExtractionRecordResponse
+
+  Step 5 — View the table
+  ───────────────────────
+      GET /projects/1/table
+      → 5 rows × 2 columns matrix with value, confidence, review_status per cell
+
+  Step 6 — Review records
+  ────────────────────────
+      POST /projects/1/records/12/review
+      Body: { "status": "CONFIRMED" }
+
+      POST /projects/1/records/7/review
+      Body: { "status": "MANUAL_UPDATED", "manual_value": "2024-03-15" }
+
+  Step 7 — Export results
+  ────────────────────────
+      GET /projects/1/export?format=xlsx
+      → Downloads "Tesla_Exec_Comp_Review_extraction.xlsx"
+
+  Step 8 (optional) — Evaluate accuracy
+  ──────────────────────────────────────
+      POST /projects/1/evaluation/upload   (multipart, file = ground_truth.csv)
+      GET  /projects/1/evaluation/report   → accuracy / coverage metrics
+
+  Step 9 (optional) — Update template and re-extract
+  ────────────────────────────────────────────────────
+      POST /projects/1/template
+      Body: { "fields": [ ... updated list ... ] }
+      → version bumped to 2, all records marked STALE
+
+      POST /projects/1/extract/all
+      → STALE records are upserted and refreshed
+
+
+================================================================================
+8. LLM & EXTRACTION INTERNALS
+================================================================================
+
+  Model         : gemini-2.0-flash
+  SDK           : google-genai >= 1.0.0  (NOT the deprecated google-generativeai)
+  Temperature   : 0.1  (low = deterministic, factual extraction)
+  Output format : response_mime_type = "application/json"
+
+  Per-call behaviour
+  ------------------
+  Each (document, field) pair is a separate API call.
+  The prompt includes:
+    • Field key, type, description
+    • Normalisation rules (date → ISO 8601, amount → float+code, entity → canonical)
+    • Instruction to return ONLY a JSON object with keys:
+        value, raw_text, citations, confidence, normalized_value
+    • Up to 28,000 characters of document text
+      (longer documents are truncated with a note)
+
+  Retry strategy
+  --------------
+  Max 3 attempts per call.
+  Backoff: 2^n seconds between attempts (2s, 4s).
+  JSON parse errors abort immediately (retrying won't fix malformed JSON).
+  Network / rate-limit errors retry with backoff.
+
+  MISSING_DATA threshold
+  ----------------------
+  If Gemini returns value = null  OR  confidence < 0.30,
+  the record is marked MISSING_DATA instead of PENDING.
+
+  Markdown fence stripping
+  ------------------------
+  Even with response_mime_type="application/json", Gemini occasionally wraps
+  the response in ```json ... ```.  The client strips these before JSON parsing.
+
+
+================================================================================
+9. SMOKE TEST
+================================================================================
+
+  Purpose: Verify the full parse → extract pipeline works end-to-end using
+           the real Gemini API and the sample data/ files.
+
+  Run (requires GEMINI_API_KEY in backend/.env):
+      cd backend
+      source ../.venv/bin/activate
+      python smoke_test.py
+
+  What it does:
+  1. Creates a temporary project in memory (not persisted — rolled back at end).
+  2. Parses all 6 sample files from data/:
+       Supply Agreement.pdf
+       EX-10.2.html
+       tsla-ex102_486.htm.pdf
+       tsla-ex103_198.htm.pdf
+       tsla-ex103_462.htm.pdf
+       Tesla, Inc. (Form_ PRE 14A, Received_ 09_05_2025 06_21_37).html
+  3. Defines a 5-field template:
+       party_a, party_b, effective_date, governing_law, contract_value
+  4. Calls extract_all() — one Gemini call per (doc, field) pair.
+  5. Prints a result table:  document | field | ai_value | normalized | conf | status
+  6. Prints summary: coverage % and average confidence.
+  7. Rolls back the DB — smoke test data is never persisted.
+
+  Expected output (example):
+      ========================================================================
+        SMOKE TEST — AI Legal Field Extractor
+      ========================================================================
+        ✓ Created project id=1
+        ✓ Parsed: Supply Agreement.pdf (45,231 chars)
+        ✓ Parsed: EX-10.2.html (18,904 chars)
+        ...
+        ✓ Template created with 5 fields
+        Extracting 5 fields × 6 documents ...
+      ========================================================================
+        Results
+      ========================================================================
+        Document                     Field                Value                ...
+        Supply Agreement.pdf         effective_date       January 1, 2024     ...
+        ...
+      ========================================================================
+        Summary
+      ========================================================================
+        Total records  : 30
+        Coverage       : 83.3%  (25/30 non-missing)
+        Avg confidence : 0.78
+        (smoke test data not persisted — rolled back)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
