@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _API_KEY = os.getenv("GEMINI_API_KEY", "")
-_MODEL_NAME = "gemini-2.0-flash"
+_MODEL_NAME = "gemini-2.5-flash"
 _MAX_RETRIES = 3
 _BACKOFF_BASE = 2  # seconds
 

@@ -77,7 +77,7 @@ export default function TemplatePage() {
   );
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-8 max-w-2xl mx-auto">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-[var(--ash-black)]">Field Template</h1>

@@ -25,4 +25,10 @@ backend/uploads/
 
 # ---- Personal planning (do not commit) ----
 TODO.txt
-backend_notes.txt
+personal_notes.txt
+DesignGuidelines.md
+
+data/
+docs/
+.vscode/
+.venv/
