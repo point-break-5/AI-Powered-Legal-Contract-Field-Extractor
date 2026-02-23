@@ -1,9 +1,11 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.db import get_db
-from src.models import Document, ExtractionRecord, Project, ReviewStatus
-from src.schemas import ExtractionRecordResponse, ReviewUpdate
+from src.models import Document, ExtractionRecord, FieldTemplate, ParseStatus, Project, ReviewStatus
+from src.schemas import ExtractionRecordResponse, ReviewUpdate, TableCell, TableResponse
 
 router = APIRouter(prefix="/projects", tags=["review"])
 
@@ -140,3 +142,73 @@ def list_records(
         )
         for r in records
     ]
+
+
+@router.get("/{project_id}/table", response_model=TableResponse)
+def get_table(project_id: int, db: Session = Depends(get_db)):
+    """Return the full docs x fields extraction matrix for a project.
+
+    rows[field_key][str(document_id)] -> TableCell | None
+    None means no extraction record exists yet for that cell.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    template = db.query(FieldTemplate).filter(FieldTemplate.project_id == project_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="No field template found for this project")
+
+    fields = [f["key"] for f in template.fields]
+
+    # Only include documents whose text has been successfully parsed
+    documents = (
+        db.query(Document)
+        .filter(
+            Document.project_id == project_id,
+            Document.parse_status == ParseStatus.DONE,
+        )
+        .order_by(Document.id)
+        .all()
+    )
+    doc_list = [{"id": d.id, "filename": d.filename} for d in documents]
+    doc_ids = [d.id for d in documents]
+
+    # Fetch all extraction records for documents in this project
+    all_records = (
+        db.query(ExtractionRecord)
+        .join(Document, ExtractionRecord.document_id == Document.id)
+        .filter(Document.project_id == project_id)
+        .all()
+    )
+
+    # Build fast lookup: record_map[field_key][doc_id] = ExtractionRecord
+    record_map: dict[str, dict[int, ExtractionRecord]] = {}
+    for rec in all_records:
+        record_map.setdefault(rec.field_key, {})[rec.document_id] = rec
+
+    # Assemble the matrix
+    rows: dict[str, dict[str, Optional[TableCell]]] = {}
+    for field_key in fields:
+        rows[field_key] = {}
+        for doc_id in doc_ids:
+            rec = record_map.get(field_key, {}).get(doc_id)
+            if rec is None:
+                rows[field_key][str(doc_id)] = None
+            else:
+                rows[field_key][str(doc_id)] = TableCell(
+                    record_id=rec.id,
+                    value=rec.value,
+                    normalized_value=rec.normalized_value,
+                    confidence=rec.confidence,
+                    review_status=rec.review_status.value,
+                    citations=rec.citations,
+                    manual_value=rec.manual_value,
+                )
+
+    return TableResponse(
+        project_id=project_id,
+        fields=fields,
+        documents=doc_list,
+        rows=rows,
+    )
