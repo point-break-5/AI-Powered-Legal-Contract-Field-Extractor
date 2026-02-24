@@ -205,7 +205,7 @@ export default function TablePage() {
       {activeCell && (
         <div
           ref={panelRef}
-          className="w-72 shrink-0 bg-white border-l border-[var(--ash-gray)] flex flex-col animate-fade-in overflow-y-auto"
+          className="w-72 shrink-0 bg-white border-l border-[var(--ash-gray)] flex flex-col animate-fade-in"
         >
           {/* Panel header */}
           <div className="px-4 py-3 border-b border-[var(--ash-gray)] flex items-start justify-between">
@@ -223,7 +223,7 @@ export default function TablePage() {
           </div>
 
           {/* Values */}
-          <div className="px-4 py-4 flex flex-col gap-3 flex-1">
+          <div className="px-4 py-4 flex flex-col gap-3 flex-1 overflow-y-auto min-h-0">
             <Row label="AI Value" value={activeCell.cell.value} />
             <Row label="Normalised" value={activeCell.cell.normalized_value} />
             {activeCell.cell.manual_value && (
