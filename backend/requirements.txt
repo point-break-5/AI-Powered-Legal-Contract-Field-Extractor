@@ -4,6 +4,7 @@ python-multipart>=0.0.9
 
 # Database
 sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0   # PostgreSQL adapter (Supabase)
 
 # AI / LLM
 google-genai>=1.0.0
