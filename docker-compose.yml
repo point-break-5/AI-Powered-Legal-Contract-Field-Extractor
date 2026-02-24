@@ -1,0 +1,69 @@
+# AI-Powered Legal Contract Field Extractor — Docker Compose
+#
+# Quick start:
+#   cp backend/.env.example backend/.env
+#   # Fill in at least GEMINI_API_KEY in backend/.env
+#   docker compose up --build
+#
+# Frontend → http://localhost:3000
+# Backend  → http://localhost:8000
+# API docs → http://localhost:8000/docs
+
+services:
+
+  # ── Backend (FastAPI) ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: legal-extractor-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Named volume for SQLite database — survives container restarts
+      - backend_db:/app/data
+      # Named volume for uploaded documents — survives container restarts
+      - backend_uploads:/app/uploads
+    # Load API keys from backend/.env (git-ignored, copied from .env.example)
+    env_file:
+      - ./backend/.env
+    environment:
+      # Absolute path inside the container, inside the mounted volume
+      - DATABASE_URL=sqlite:////app/data/legal_extractor.db
+      # Allow the browser (via localhost) to call the API
+      - ALLOWED_ORIGINS=http://localhost:3000
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\"",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # ── Frontend (Next.js) ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the static JS bundle at build time — the browser calls
+        # the backend via the host-mapped port, not the internal Docker network.
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: legal-extractor-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  backend_db:
+  backend_uploads:

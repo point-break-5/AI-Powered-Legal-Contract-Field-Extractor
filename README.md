@@ -43,7 +43,10 @@ A full-stack Legal Tabular Review system that ingests multiple legal documents (
 
 ```
 .
-├── backend/                        # FastAPI backend
+├── docker-compose.yml              # One-command Docker setup
+├── backend/
+│   ├── Dockerfile                  # Python 3.11-slim + Tesseract + PyMuPDF
+│   ├── .dockerignore
 │   ├── main.py                     # App entry point, CORS, router registration
 │   ├── src/
 │   │   ├── models.py               # SQLAlchemy ORM models + enums
@@ -67,7 +70,9 @@ A full-stack Legal Tabular Review system that ingests multiple legal documents (
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── Documentation.txt           # Full API reference
-├── frontend/                       # Next.js 16.1 App Router frontend
+├── frontend/
+│   ├── Dockerfile                  # 3-stage Node.js build (deps → builder → runner)
+│   ├── .dockerignore
 │   ├── app/
 │   │   ├── page.tsx                # Landing page
 │   │   ├── projects/
@@ -93,6 +98,55 @@ A full-stack Legal Tabular Review system that ingests multiple legal documents (
 ---
 
 ## Quick Start
+
+Choose **Docker** (recommended — one command) or **manual** setup.
+
+---
+
+## 🐳 Docker (Recommended)
+
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose v2)
+- A [Google AI Studio](https://aistudio.google.com/) API key (Gemini 2.5 Flash)
+
+### Steps
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/point-break-5/AI-Powered-Legal-Contract-Field-Extractor.git
+cd AI-Powered-Legal-Contract-Field-Extractor
+
+# 2. Create the backend .env with your API key(s)
+cp backend/.env.example backend/.env
+# Edit backend/.env and set GEMINI_API_KEY=your_key_here
+
+# 3. Build and start both services
+docker compose up --build
+```
+
+| Service  | URL                              |
+|----------|----------------------------------|
+| Frontend | http://localhost:3000            |
+| Backend  | http://localhost:8000            |
+| API docs | http://localhost:8000/docs       |
+
+The SQLite database and uploaded files are stored in named Docker volumes (`backend_db`, `backend_uploads`) — they survive container restarts and rebuilds.
+
+**Stop and clean up:**
+```bash
+docker compose down          # stop containers, keep volumes
+docker compose down -v       # stop containers AND delete all data volumes
+```
+
+**Rebuild after code changes:**
+```bash
+docker compose up --build
+```
+
+---
+
+## Manual Setup
 
 ### Prerequisites
 

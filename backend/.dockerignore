@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files (contain API keys — never bake into image)
+.env
+.env.*
+
+# Database & uploaded files (go in named volumes, not the image)
+*.db
+uploads/
+
+# Development artifacts
+.git/
+.gitignore
+README.md
+Documentation.txt
+smoke_test.py
+
+# IDE / OS
+.vscode/
+.DS_Store
