@@ -4,15 +4,56 @@ from __future__ import annotations
 
 import io
 
+MIN_TEXT_CHARS = 20  # pages with fewer chars than this are treated as image-only
+
+
+def _ocr_pdf_page(page) -> str:
+    """Render a single PyMuPDF page to an image and OCR it with Tesseract."""
+    import pytesseract
+    from PIL import Image
+
+    # Render at 2x scale for better OCR accuracy
+    mat = page.get_transformation_matrix()
+    pix = page.get_pixmap(matrix=__import__('fitz').Matrix(2, 2))
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    return pytesseract.image_to_string(img, lang="eng").strip()
+
 
 def parse_pdf(content: bytes) -> str:
     import fitz  # PyMuPDF
 
-    text_parts = []
+    text_pages = []   # text-layer text, one entry per page
+    ocr_pages  = []   # OCR text for image-only pages
+
     with fitz.open(stream=content, filetype="pdf") as doc:
-        for page in doc:
-            text_parts.append(page.get_text())
-    return "\n".join(text_parts)
+        for page_num, page in enumerate(doc, start=1):
+            layer_text = page.get_text().strip()
+
+            if len(layer_text) >= MIN_TEXT_CHARS:
+                # Page has a real text layer
+                text_pages.append(layer_text)
+            else:
+                # Image-only (or near-empty) page — run OCR
+                text_pages.append("")  # keep page count aligned
+                try:
+                    ocr_text = _ocr_pdf_page(page)
+                    if ocr_text:
+                        ocr_pages.append(f"[Page {page_num}] {ocr_text}")
+                except Exception as e:
+                    ocr_pages.append(f"[Page {page_num} OCR failed: {e}]")
+
+    parts = []
+
+    text_body = "\n".join(t for t in text_pages if t)
+    if text_body:
+        parts.append("=== Text Layer ===")
+        parts.append(text_body)
+
+    if ocr_pages:
+        parts.append("=== OCR Text (image pages) ===")
+        parts.extend(ocr_pages)
+
+    return "\n".join(parts)
 
 
 def parse_docx(content: bytes) -> str:
