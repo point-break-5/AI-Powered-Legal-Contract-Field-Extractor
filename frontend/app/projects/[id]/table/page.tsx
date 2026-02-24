@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink, MoreHorizontal, RotateCcw } from 'lucide-react';
+import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink, MoreHorizontal, RotateCcw, GripVertical } from 'lucide-react';
 import { api, type TableCell, type TableData, type ExtractionRecord, type LLMProvider, LLM_PROVIDER_LABELS } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -79,6 +79,15 @@ export default function TablePage() {
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [rowActioning, setRowActioning] = useState<string | null>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
+
+  // ── Column drag-and-drop ──────────────────────────────────────────────────
+  const [colOrder, setColOrder] = useState<number[]>([]);
+  const [draggingDocId, setDraggingDocId] = useState<number | null>(null);
+  const [dragOverDocId, setDragOverDocId] = useState<number | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<'left' | 'right'>('right');
+  const [justDropped, setJustDropped] = useState<number | null>(null);
+  const dragRef = useRef<{ src: number | null; overSide: 'left' | 'right' }>({ src: null, overSide: 'right' });
+  // ─────────────────────────────────────────────────────────────────────────
 
   const loadTable = useCallback(() => {
     setLoading(true);
@@ -197,6 +206,81 @@ export default function TablePage() {
     }
   }
 
+  // ── Sync column order whenever table data refreshes ───────────────────────
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (!tableData) return;
+    const ids = tableData.documents.map(d => d.id);
+    setColOrder(prev => {
+      const kept = prev.filter(id => ids.includes(id));
+      const added = ids.filter(id => !prev.includes(id));
+      return [...kept, ...added];
+    });
+  }, [tableData]);
+
+  const orderedDocs = colOrder
+    .map(id => tableData?.documents.find(d => d.id === id))
+    .filter((d): d is { id: number; filename: string } => !!d);
+
+  const isDefaultOrder =
+    !tableData ||
+    (colOrder.length === tableData.documents.length &&
+      colOrder.every((id, i) => id === tableData.documents[i]?.id));
+
+  function handleColDragStart(e: React.DragEvent<HTMLTableCellElement>, docId: number) {
+    dragRef.current.src = docId;
+    setDraggingDocId(docId);
+    e.dataTransfer.effectAllowed = 'move';
+    const filename = tableData?.documents.find(d => d.id === docId)?.filename ?? 'Column';
+    const ghost = document.createElement('div');
+    ghost.textContent = filename;
+    ghost.style.cssText = [
+      'position:fixed', 'top:-200px', 'left:-200px',
+      'background:#4f6ef7', 'color:#fff', 'padding:5px 14px',
+      'border-radius:8px', 'font-size:11px', 'font-weight:600',
+      'white-space:nowrap', 'box-shadow:0 6px 20px rgba(79,110,247,0.45)',
+      'pointer-events:none', 'z-index:9999',
+    ].join(';');
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 18);
+    setTimeout(() => ghost.remove(), 0);
+  }
+
+  function handleColDragOver(e: React.DragEvent<HTMLTableCellElement>, docId: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragRef.current.src === docId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const side: 'left' | 'right' = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+    dragRef.current.overSide = side;
+    if (dragOverDocId !== docId) setDragOverDocId(docId);
+    if (dragOverSide !== side) setDragOverSide(side);
+  }
+
+  function handleColDrop(e: React.DragEvent<HTMLTableCellElement>, docId: number) {
+    e.preventDefault();
+    const src = dragRef.current.src;
+    const side = dragRef.current.overSide;
+    if (src == null || src === docId) { cleanupColDrag(); return; }
+    setColOrder(prev => {
+      const arr = prev.filter(id => id !== src);
+      const ti = arr.indexOf(docId);
+      if (ti === -1) return prev;
+      arr.splice(side === 'left' ? ti : ti + 1, 0, src);
+      return arr;
+    });
+    setJustDropped(src);
+    setTimeout(() => setJustDropped(null), 700);
+    cleanupColDrag();
+  }
+
+  function cleanupColDrag() {
+    dragRef.current.src = null;
+    setDraggingDocId(null);
+    setDragOverDocId(null);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   if (loading) return <div className="flex justify-center py-24"><Spinner size="lg" /></div>;
 
   return (
@@ -216,6 +300,18 @@ export default function TablePage() {
           <Button variant="destructive" size="sm" className="shrink-0" loading={clearing} onClick={handleClearAll}>
             Clear
           </Button>
+          {!isDefaultOrder && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
+              title="Reset column order to default"
+              onClick={() => tableData && setColOrder(tableData.documents.map(d => d.id))}
+            >
+              <RotateCcw size={13} />
+              Reset Order
+            </Button>
+          )}
           <select
             value={provider}
             onChange={e => setProvider(e.target.value as LLMProvider)}
@@ -263,16 +359,46 @@ export default function TablePage() {
                   <th className="sticky left-0 bg-[var(--ash-light)] text-left px-4 py-3 font-semibold text-[var(--ash-charcoal)] border-b border-r border-[var(--ash-gray)] min-w-[160px] z-20">
                     Field
                   </th>
-                  {tableData.documents.map(doc => (
-                    <th
-                      key={doc.id}
-                      className="px-3 py-3 font-medium text-[var(--ash-charcoal)] border-b border-r border-[var(--ash-gray)] max-w-[180px] text-left whitespace-nowrap"
-                    >
-                      <span className="block truncate max-w-[160px]" title={doc.filename}>
-                        {doc.filename}
-                      </span>
-                    </th>
-                  ))}
+                  {orderedDocs.map(doc => {
+                    const isDragging  = draggingDocId === doc.id;
+                    const isOver      = dragOverDocId === doc.id && draggingDocId !== doc.id;
+                    const isDropped   = justDropped   === doc.id;
+                    return (
+                      <th
+                        key={doc.id}
+                        draggable
+                        onDragStart={e => handleColDragStart(e, doc.id)}
+                        onDragOver={e  => handleColDragOver(e, doc.id)}
+                        onDrop={e      => handleColDrop(e, doc.id)}
+                        onDragEnd={cleanupColDrag}
+                        className={`relative px-3 py-3 font-medium border-b border-r border-[var(--ash-gray)] max-w-[180px] text-left whitespace-nowrap select-none transition-colors duration-200 ${
+                          isDragging
+                            ? 'opacity-40 bg-[var(--accent-blue)]/10 text-[var(--ash-charcoal)]'
+                            : isDropped
+                              ? 'col-drop-flash text-[var(--ash-charcoal)]'
+                              : isOver
+                                ? 'bg-[var(--accent-blue)]/8 text-[var(--accent-blue)]'
+                                : 'text-[var(--ash-charcoal)] hover:bg-[var(--ash-light)]'
+                        }`}
+                        style={{ cursor: draggingDocId ? 'grabbing' : 'grab' }}
+                      >
+                        {/* Drop indicator line */}
+                        {isOver && (
+                          <span
+                            className={`absolute top-0 bottom-0 w-[3px] rounded-full bg-[var(--accent-blue)] z-30 transition-[left,right] duration-75 ${
+                              dragOverSide === 'left' ? 'left-0' : 'right-0'
+                            }`}
+                          />
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <GripVertical size={12} className="text-[var(--ash-gray)] shrink-0 opacity-70" />
+                          <span className="block truncate max-w-[140px]" title={doc.filename}>
+                            {doc.filename}
+                          </span>
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -326,11 +452,15 @@ export default function TablePage() {
                         </div>
                       </div>
                     </td>
-                    {tableData.documents.map(doc => {
-                      const cell = tableData.rows[fieldKey]?.[String(doc.id)] ?? null;
+                    {orderedDocs.map(doc => {
+                      const cell         = tableData.rows[fieldKey]?.[String(doc.id)] ?? null;
+                      const colDragging  = draggingDocId === doc.id;
+                      const colOver      = dragOverDocId === doc.id && draggingDocId !== doc.id;
+                      const colDropped   = justDropped   === doc.id;
+                      const colCls = colDragging ? 'opacity-40' : colDropped ? 'col-drop-flash' : colOver ? 'bg-[var(--accent-blue)]/5' : '';
                       if (!cell) {
                         return (
-                          <td key={doc.id} className="px-3 py-3 border-b border-r border-[var(--ash-gray)] text-[var(--ash-medium)]">
+                          <td key={doc.id} className={`px-3 py-3 border-b border-r border-[var(--ash-gray)] text-[var(--ash-medium)] transition-colors duration-200 ${colCls}`}>
                             —
                           </td>
                         );
@@ -340,8 +470,10 @@ export default function TablePage() {
                       return (
                         <td
                           key={doc.id}
-                          className="px-3 py-3 border-b border-r border-[var(--ash-gray)] cursor-pointer hover:bg-[var(--accent-blue)]/5 transition-colors max-w-[200px]"
-                          onClick={() => setActiveCell({ cell, fieldKey, docName: doc.filename })}
+                          className={`px-3 py-3 border-b border-r border-[var(--ash-gray)] transition-colors duration-200 max-w-[200px] ${colCls} ${
+                            colDragging || colOver ? '' : 'cursor-pointer hover:bg-[var(--accent-blue)]/5'
+                          }`}
+                          onClick={() => !draggingDocId && setActiveCell({ cell, fieldKey, docName: doc.filename })}
                         >
                           <div className="flex items-start gap-1.5">
                             <div

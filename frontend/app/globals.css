@@ -73,6 +73,14 @@ body {
 }
 .animate-btn-loading { animation: btnLoading 1.1s ease-in-out infinite; }
 
+/* Column drop flash (table drag-and-drop) */
+@keyframes colDropFlash {
+  0%   { background-color: rgba(91, 127, 229, 0.30); }
+  55%  { background-color: rgba(91, 127, 229, 0.12); }
+  100% { background-color: transparent; }
+}
+.col-drop-flash { animation: colDropFlash 0.75s ease-out forwards; }
+
 /* Shimmer for loading skeletons */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
