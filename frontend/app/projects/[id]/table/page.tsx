@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink, MoreHorizontal } from 'lucide-react';
+import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink, MoreHorizontal, RotateCcw } from 'lucide-react';
 import { api, type TableCell, type TableData, type ExtractionRecord, type LLMProvider, LLM_PROVIDER_LABELS } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
-import { confidenceColor } from '@/lib/utils';
+import { confidenceColor, friendlyError } from '@/lib/utils';
+import { ToastContainer, type ToastItem } from '@/components/ui/Toast';
 
 export default function TablePage() {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +17,17 @@ export default function TablePage() {
   const [tableData, setTableData] = useState<TableData | null>(null);
   const [loading, setLoading] = useState(true);
   const [extracting, setExtracting] = useState(false);
-  const [error, setError] = useState('');
+  const [clearing, setClearing] = useState(false);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastId = useRef(0);
+
+  function pushToast(message: string, type: ToastItem['type'] = 'error') {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+  }
+  function removeToast(id: number) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
   const [activeCell, setActiveCell] = useState<{
     cell: TableCell;
     fieldKey: string;
@@ -40,7 +51,7 @@ export default function TablePage() {
     setLoading(true);
     api.review.table(projectId)
       .then(setTableData)
-      .catch(err => setError(err.message))
+      .catch(err => pushToast(friendlyError(err.message)))
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -57,7 +68,7 @@ export default function TablePage() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [rowMenu]);
 
-  async function handleRowAction(fieldKey: string, status: 'CONFIRMED' | 'REJECTED') {
+  async function handleRowAction(fieldKey: string, status: 'CONFIRMED' | 'REJECTED' | 'PENDING') {
     if (!tableData) return;
     setRowMenu(null);
     setRowActioning(fieldKey);
@@ -69,7 +80,7 @@ export default function TablePage() {
       await Promise.all(updates);
       loadTable();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Bulk action failed');
+      pushToast(friendlyError(err instanceof Error ? err.message : 'Bulk action failed'));
     } finally {
       setRowActioning(null);
     }
@@ -77,14 +88,27 @@ export default function TablePage() {
 
   async function handleExtractAll() {
     setExtracting(true);
-    setError('');
     try {
       await api.extraction.extractAll(projectId, provider);
       loadTable();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Extraction failed');
+      pushToast(friendlyError(err instanceof Error ? err.message : 'Extraction failed'));
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleClearAll() {
+    if (!confirm('Clear all extracted values? This cannot be undone. Documents and field keys will be kept.')) return;
+    setClearing(true);
+    try {
+      await api.extraction.clearAll(projectId);
+      setActiveCell(null);
+      loadTable();
+    } catch (err: unknown) {
+      pushToast(friendlyError(err instanceof Error ? err.message : 'Clear failed'));
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -112,7 +136,7 @@ export default function TablePage() {
       setShowManual(false);
       setManualValue('');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Review failed');
+      pushToast(friendlyError(err instanceof Error ? err.message : 'Review failed'));
     } finally {
       setReviewing(false);
     }
@@ -121,6 +145,7 @@ export default function TablePage() {
   if (loading) return <div className="flex justify-center py-24"><Spinner size="lg" /></div>;
 
   return (
+    <>
     <div className="flex h-screen overflow-hidden">
       {/* ── Main table ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -129,12 +154,12 @@ export default function TablePage() {
           <h1 className="text-base font-semibold text-[var(--ash-black)] flex-1">
             Review Table
           </h1>
-          {error && (
-            <span className="text-xs text-[var(--accent-coral)] flex-1">{error}</span>
-          )}
           <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setShowExportModal(true)}>
             <Download size={13} />
             Export
+          </Button>
+          <Button variant="destructive" size="sm" className="shrink-0" loading={clearing} onClick={handleClearAll}>
+            Clear
           </Button>
           <select
             value={provider}
@@ -215,6 +240,14 @@ export default function TablePage() {
                               >
                                 <XCircle size={12} />
                                 Reject All
+                              </button>
+                              <div className="my-1 border-t border-[var(--ash-gray)]" />
+                              <button
+                                onClick={() => handleRowAction(fieldKey, 'PENDING')}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--ash-charcoal)] hover:bg-[var(--ash-gray)] transition-colors"
+                              >
+                                <RotateCcw size={12} />
+                                Clear All
                               </button>
                             </div>
                           )}
@@ -385,6 +418,16 @@ export default function TablePage() {
                 <Pencil size={13} />
                 Edit Manually
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full text-[var(--accent-coral)] hover:bg-[var(--accent-coral)]/10 border-[var(--accent-coral)]/30"
+                loading={reviewing}
+                onClick={() => handleReview('PENDING')}
+              >
+                <RotateCcw size={13} />
+                Clear
+              </Button>
             </div>
           )}
         </div>
@@ -495,6 +538,8 @@ export default function TablePage() {
         </div>
       )}
     </div>
+    <ToastContainer toasts={toasts} remove={removeToast} />
+    </>
   );
 }
 
