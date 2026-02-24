@@ -90,6 +90,26 @@ const PRESETS: { id: string; label: string; description: string; fields: FieldDe
       { key: 'governing_law', type: 'text', description: 'Jurisdiction governing the lease', required: false },
     ],
   },
+  {
+    id: 'legal_matter',
+    label: 'Legal Matter',
+    description: 'Case, client, court, counsel, claims',
+    fields: [
+      { key: 'client_name', type: 'entity', description: 'Name of the client or party being represented', required: true },
+      { key: 'opposing_party', type: 'entity', description: 'Name of the opposing party or defendant', required: true },
+      { key: 'matter_type', type: 'text', description: 'Type of legal matter (e.g. litigation, arbitration, advisory)', required: true },
+      { key: 'case_number', type: 'text', description: 'Court or tribunal case / docket number', required: false },
+      { key: 'court_or_tribunal', type: 'text', description: 'Name of the court, tribunal, or arbitration body', required: false },
+      { key: 'filing_date', type: 'date', description: 'Date the matter or claim was filed', required: false },
+      { key: 'hearing_date', type: 'date', description: 'Date of the next scheduled hearing', required: false },
+      { key: 'lead_counsel', type: 'entity', description: 'Name of the lead attorney or advocate', required: false },
+      { key: 'cause_of_action', type: 'text', description: 'Legal basis or cause of action (e.g. breach of contract, negligence)', required: false },
+      { key: 'claim_amount', type: 'amount', description: 'Monetary value of the claim or damages sought', required: false },
+      { key: 'jurisdiction', type: 'text', description: 'Governing jurisdiction and applicable law', required: false },
+      { key: 'settlement_amount', type: 'amount', description: 'Agreed settlement or award amount', required: false },
+      { key: 'resolution_date', type: 'date', description: 'Date the matter was resolved, dismissed, or settled', required: false },
+    ],
+  },
 ];
 
 export default function TemplatePage() {
