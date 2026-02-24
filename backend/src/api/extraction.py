@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.db import get_db
-from src.models import FieldTemplate, Project
+from src.models import Document, ExtractionRecord, FieldTemplate, Project
 from src.schemas import ExtractionRecordResponse
 from src.services.extraction import extract_all, extract_single
 
@@ -77,6 +77,27 @@ def trigger_extract_single(
         raise HTTPException(status_code=502, detail=str(e))
 
     return _to_response(record)
+
+
+@router.delete("/{project_id}/extract/all", status_code=204)
+def clear_all_extractions(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete all extraction records for a project. Keeps documents and template."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    doc_ids = [
+        d.id for d in db.query(Document.id).filter(Document.project_id == project_id).all()
+    ]
+    if doc_ids:
+        db.query(ExtractionRecord).filter(
+            ExtractionRecord.document_id.in_(doc_ids)
+        ).delete(synchronize_session="fetch")
+        db.commit()
+    return None
 
 
 def _to_response(record) -> ExtractionRecordResponse:
