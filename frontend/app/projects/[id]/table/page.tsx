@@ -135,13 +135,18 @@ export default function TablePage() {
     if (_isExtracting(projectId)) return;
     const controller = _startExtraction(projectId);
     setExtracting(true);
+    // Subscribe so that cancel / success / error on THIS page also updates state
+    _subscribeExtraction(projectId, (error) => {
+      setExtracting(false);
+      loadTable();
+      if (error) pushToast(friendlyError(error));
+    });
     try {
       await api.extraction.extractAll(projectId, provider, controller.signal);
       _settleExtraction(projectId);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
-        // User cancelled — settle silently
-        _settleExtraction(projectId);
+        _settleExtraction(projectId); // user cancelled — settle silently
       } else {
         _settleExtraction(projectId, err instanceof Error ? err.message : 'Extraction failed');
       }
