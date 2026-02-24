@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate, X, Pencil } from 'lucide-react';
+import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate, X, Pencil, AlertTriangle } from 'lucide-react';
 import { api, type FieldDefinition, type Template } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { useNavGuard } from '@/lib/nav-guard';
 
 const FIELD_TYPES: FieldDefinition['type'][] = ['text', 'date', 'amount', 'entity'];
 
@@ -150,6 +151,16 @@ export default function TemplatePage() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Unsaved-changes guard
+  const [savedFields, setSavedFields] = useState<FieldDefinition[]>([emptyField()]);
+  const [showGuardModal, setShowGuardModal] = useState(false);
+  const [pendingNav, setPendingNav] = useState<((allow: boolean) => void) | null>(null);
+  const { setGuard } = useNavGuard();
+  const isDirty = useMemo(
+    () => JSON.stringify(fields) !== JSON.stringify(savedFields),
+    [fields, savedFields],
+  );
+
   function saveAsPreset() {
     const name = newPresetName.trim();
     if (!name) return;
@@ -184,8 +195,13 @@ export default function TemplatePage() {
 
   useEffect(() => {
     api.template.get(projectId)
-      .then(t => { setTemplate(t); setFields(t.fields.length ? t.fields : [emptyField()]); })
-      .catch(() => {}) // 404 = no template yet, that's fine
+      .then(t => {
+        setTemplate(t);
+        const loaded = t.fields.length ? t.fields : [emptyField()];
+        setFields(loaded);
+        setSavedFields(loaded);
+      })
+      .catch(() => { setSavedFields([emptyField()]); })
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -209,30 +225,76 @@ export default function TemplatePage() {
     setFields(preset.fields);
   }
 
-  async function handleSave() {
+  async function handleSave(opts?: { skipVersionConfirm?: boolean }): Promise<boolean> {
     setError('');
-    // Validate
     for (const f of fields) {
-      if (!f.key.trim()) { setError('All fields must have a key.'); return; }
+      if (!f.key.trim()) { setError('All fields must have a key.'); return false; }
     }
     const keys = fields.map(f => f.key.trim());
-    if (new Set(keys).size !== keys.length) { setError('Field keys must be unique.'); return; }
+    if (new Set(keys).size !== keys.length) { setError('Field keys must be unique.'); return false; }
 
-    if (template && template.version > 0) {
-      if (!confirm('Saving will bump the template version and mark all existing extraction records as STALE. Continue?')) return;
+    if (!opts?.skipVersionConfirm && template && template.version > 0) {
+      if (!confirm('Saving will bump the template version and mark all existing extraction records as STALE. Continue?')) return false;
     }
 
     setSaving(true);
     try {
       const t = await api.template.upsert(projectId, fields);
       setTemplate(t);
+      setSavedFields([...fields]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      return true;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed');
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  // Register / unregister navigation guard when dirty
+  useEffect(() => {
+    if (isDirty) {
+      setGuard((proceed) => {
+        setShowGuardModal(true);
+        setPendingNav(() => proceed);
+      });
+    } else {
+      setGuard(null);
+    }
+    return () => { setGuard(null); };
+  }, [isDirty, setGuard]);
+
+  // Warn on browser tab close / refresh
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  async function handleGuardSave() {
+    const ok = await handleSave({ skipVersionConfirm: true });
+    if (ok) {
+      pendingNav?.(true);
+      setPendingNav(null);
+      setShowGuardModal(false);
+    }
+  }
+
+  function handleGuardDiscard() {
+    setFields(savedFields);
+    pendingNav?.(true);
+    setPendingNav(null);
+    setShowGuardModal(false);
+  }
+
+  function handleGuardCancel() {
+    pendingNav?.(false);
+    setPendingNav(null);
+    setShowGuardModal(false);
   }
 
   if (loading) return (
@@ -251,7 +313,7 @@ export default function TemplatePage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="secondary"
             onClick={() => {
@@ -263,7 +325,7 @@ export default function TemplatePage() {
             <X size={14} />
             Clear All
           </Button>
-          <Button onClick={handleSave} loading={saving}>
+          <Button onClick={() => handleSave()} loading={saving}>
             <Save size={14} />
             {saved ? 'Saved!' : 'Save Template'}
           </Button>
@@ -468,6 +530,42 @@ export default function TemplatePage() {
         <Plus size={15} />
         Add Field
       </button>
+
+      {/* Unsaved-changes guard modal */}
+      {showGuardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={handleGuardCancel}
+          />
+          <div className="relative z-10 bg-white rounded-2xl shadow-2xl p-6 w-[340px] animate-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                <AlertTriangle size={18} className="text-amber-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--ash-black)]">Unsaved changes</h3>
+                <p className="text-xs text-[var(--ash-dark)] mt-0.5">Your template has been modified.</p>
+              </div>
+            </div>
+            <p className="text-sm text-[var(--ash-charcoal)] leading-relaxed mb-5">
+              Would you like to save your changes before leaving, or discard them?
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={handleGuardCancel}>
+                Stay
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleGuardDiscard}>
+                Discard
+              </Button>
+              <Button size="sm" onClick={handleGuardSave} loading={saving}>
+                <Save size={13} />
+                Save &amp; Leave
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

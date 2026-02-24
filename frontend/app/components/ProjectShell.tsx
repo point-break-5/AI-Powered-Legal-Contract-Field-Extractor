@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { FileText, Settings, Table2, BarChart2, ChevronLeft, Scale, ScrollText } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useNavGuard } from '@/lib/nav-guard';
 
 const NAV_ITEMS = [
   { segment: 'docs',     icon: FileText,   label: 'Documents'    },
@@ -17,6 +17,8 @@ const NAV_ITEMS = [
 export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams<{ id: string }>();
   const pathname = usePathname();
+  const router = useRouter();
+  const { runGuard } = useNavGuard();
   const id = params?.id ?? '';
   const projectId = Number(id);
 
@@ -33,13 +35,14 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       <aside className="w-56 shrink-0 bg-white border-r border-[var(--ash-gray)] flex flex-col fixed top-0 bottom-0">
         {/* Brand / back */}
         <div className="px-3 h-14 flex items-center gap-2 border-b border-[var(--ash-gray)]">
-          <Link
+          <a
             href="/projects"
             title="All Projects"
             className="p-1 rounded-[var(--radius-sm)] text-[var(--ash-dark)] hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors shrink-0"
+            onClick={(e) => { e.preventDefault(); runGuard(() => router.push('/projects')); }}
           >
             <ChevronLeft size={16} />
-          </Link>
+          </a>
           <Scale size={17} className="text-[var(--accent-blue)] shrink-0" />
           <span className="text-sm font-semibold text-[var(--ash-black)] truncate flex-1">
             {projectName || 'Loading…'}
@@ -50,10 +53,12 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5 overflow-y-auto">
           {NAV_ITEMS.map(({ segment, icon: Icon, label }) => {
             const active = pathname.includes(`/${segment}`);
+            const href = `/projects/${id}/${segment}`;
             return (
-              <Link
+              <a
                 key={segment}
-                href={`/projects/${id}/${segment}`}
+                href={href}
+                onClick={(e) => { e.preventDefault(); runGuard(() => router.push(href)); }}
                 className={`flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-sm font-medium transition-colors duration-150 ${
                   active
                     ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
@@ -62,7 +67,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon size={15} />
                 {label}
-              </Link>
+              </a>
             );
           })}
         </nav>
