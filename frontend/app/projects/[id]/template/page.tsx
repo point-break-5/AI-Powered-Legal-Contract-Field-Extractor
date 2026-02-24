@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Plus, Trash2, Save, AlertCircle, Info } from 'lucide-react';
+import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate } from 'lucide-react';
 import { api, type FieldDefinition, type Template } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -15,6 +15,82 @@ const emptyField = (): FieldDefinition => ({
   description: '',
   required: false,
 });
+
+const PRESETS: { id: string; label: string; description: string; fields: FieldDefinition[] }[] = [
+  {
+    id: 'general_contract',
+    label: 'General Contract',
+    description: 'Parties, dates, value, governing law',
+    fields: [
+      { key: 'party_a', type: 'entity', description: 'First party named in the contract', required: true },
+      { key: 'party_b', type: 'entity', description: 'Second party named in the contract', required: true },
+      { key: 'effective_date', type: 'date', description: 'Date the agreement takes effect', required: true },
+      { key: 'expiry_date', type: 'date', description: 'Date the agreement expires or terminates', required: false },
+      { key: 'contract_value', type: 'amount', description: 'Total monetary value or consideration of the contract', required: false },
+      { key: 'governing_law', type: 'text', description: 'Jurisdiction whose laws govern the contract', required: false },
+    ],
+  },
+  {
+    id: 'nda',
+    label: 'NDA',
+    description: 'Non-disclosure agreement',
+    fields: [
+      { key: 'disclosing_party', type: 'entity', description: 'Party disclosing confidential information', required: true },
+      { key: 'receiving_party', type: 'entity', description: 'Party receiving confidential information', required: true },
+      { key: 'effective_date', type: 'date', description: 'Date the NDA takes effect', required: true },
+      { key: 'expiry_date', type: 'date', description: 'Expiration date of NDA obligations', required: false },
+      { key: 'confidential_information', type: 'text', description: 'Definition of what constitutes confidential information', required: true },
+      { key: 'purpose', type: 'text', description: 'The permitted purpose for disclosure', required: false },
+      { key: 'governing_law', type: 'text', description: 'Jurisdiction governing the NDA', required: false },
+    ],
+  },
+  {
+    id: 'employment',
+    label: 'Employment',
+    description: 'Role, salary, duration, notice period',
+    fields: [
+      { key: 'employee_name', type: 'entity', description: 'Full legal name of the employee', required: true },
+      { key: 'employer_name', type: 'entity', description: 'Full legal name of the employer', required: true },
+      { key: 'job_title', type: 'text', description: 'Position or role title', required: true },
+      { key: 'start_date', type: 'date', description: 'Employment commencement date', required: true },
+      { key: 'end_date', type: 'date', description: 'Employment end date (for fixed-term contracts)', required: false },
+      { key: 'salary', type: 'amount', description: 'Annual or monthly gross salary', required: false },
+      { key: 'notice_period', type: 'text', description: 'Required notice period for termination', required: false },
+      { key: 'governing_law', type: 'text', description: 'Jurisdiction governing the employment contract', required: false },
+    ],
+  },
+  {
+    id: 'service_agreement',
+    label: 'Service Agreement',
+    description: 'Scope, deliverables, payment, IP',
+    fields: [
+      { key: 'service_provider', type: 'entity', description: 'Party providing the services', required: true },
+      { key: 'client', type: 'entity', description: 'Client receiving the services', required: true },
+      { key: 'scope_of_services', type: 'text', description: 'Description of services to be provided', required: true },
+      { key: 'start_date', type: 'date', description: 'Date services commence', required: true },
+      { key: 'end_date', type: 'date', description: 'Date services end or project completion', required: false },
+      { key: 'total_fee', type: 'amount', description: 'Total fee or contract value for the services', required: false },
+      { key: 'payment_terms', type: 'text', description: 'Payment schedule and terms', required: false },
+      { key: 'ip_ownership', type: 'text', description: 'Who owns intellectual property created during the engagement', required: false },
+      { key: 'governing_law', type: 'text', description: 'Jurisdiction governing the agreement', required: false },
+    ],
+  },
+  {
+    id: 'lease',
+    label: 'Lease Agreement',
+    description: 'Property, rent, term, deposit',
+    fields: [
+      { key: 'landlord', type: 'entity', description: 'Name of the landlord or lessor', required: true },
+      { key: 'tenant', type: 'entity', description: 'Name of the tenant or lessee', required: true },
+      { key: 'property_address', type: 'text', description: 'Full address of the leased property', required: true },
+      { key: 'lease_start_date', type: 'date', description: 'Lease commencement date', required: true },
+      { key: 'lease_end_date', type: 'date', description: 'Lease expiration date', required: true },
+      { key: 'monthly_rent', type: 'amount', description: 'Monthly rental amount', required: true },
+      { key: 'security_deposit', type: 'amount', description: 'Security deposit amount', required: false },
+      { key: 'governing_law', type: 'text', description: 'Jurisdiction governing the lease', required: false },
+    ],
+  },
+];
 
 export default function TemplatePage() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +120,14 @@ export default function TemplatePage() {
 
   function removeField(i: number) {
     setFields(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  function loadPreset(preset: typeof PRESETS[number]) {
+    const isBlank = fields.length === 1 && !fields[0].key && !fields[0].description;
+    if (!isBlank) {
+      if (!confirm(`Replace current fields with the "${preset.label}" preset?`)) return;
+    }
+    setFields(preset.fields);
   }
 
   async function handleSave() {
@@ -107,6 +191,34 @@ export default function TemplatePage() {
           Saving a new version will mark existing extraction records as <strong className="text-[var(--ash-deep)]">STALE</strong>. Use <strong className="text-[var(--ash-deep)]">Re-extract All</strong> on the Review Table page to refresh them.
         </div>
       )}
+
+      {/* Presets */}
+      <div className="mb-5 bg-white border border-[var(--ash-gray)] rounded-[var(--radius-xl)] p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <LayoutTemplate size={14} className="text-[var(--accent-blue)]" />
+          <span className="text-xs font-semibold text-[var(--ash-charcoal)]">Presets</span>
+          <span className="text-[11px] text-[var(--ash-dark)]">— click to load a predefined field set</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map(preset => (
+            <button
+              key={preset.id}
+              onClick={() => loadPreset(preset)}
+              className="group flex flex-col items-start px-3 py-2 rounded-[var(--radius-md)] border border-[var(--ash-gray)] bg-[var(--ash-white)] hover:border-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/5 transition-all text-left"
+            >
+              <span className="text-xs font-semibold text-[var(--ash-black)] group-hover:text-[var(--accent-blue)] transition-colors">
+                {preset.label}
+              </span>
+              <span className="text-[11px] text-[var(--ash-dark)] mt-0.5">
+                {preset.description}
+              </span>
+              <span className="text-[10px] text-[var(--ash-medium)] mt-1">
+                {preset.fields.length} fields
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Field list */}
       <div className="flex flex-col gap-3">
