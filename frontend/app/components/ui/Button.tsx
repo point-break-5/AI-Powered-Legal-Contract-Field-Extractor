@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Spinner } from './Spinner';
 
 type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';
@@ -30,6 +30,8 @@ const sizeClasses: Record<Size, string> = {
   lg: 'px-5 py-2.5 text-base gap-2',
 };
 
+const iconSizes: Record<Size, number> = { sm: 12, md: 15, lg: 17 };
+
 export function Button({
   variant = 'primary',
   size = 'md',
@@ -43,14 +45,18 @@ export function Button({
     <button
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center font-medium rounded-[var(--radius-md)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed select-none',
+        'inline-flex items-center justify-center font-medium rounded-[var(--radius-md)] transition-all duration-200 select-none',
         variantClasses[variant],
         sizeClasses[size],
+        loading && 'cursor-wait animate-btn-loading',
+        !loading && disabled && 'opacity-50 cursor-not-allowed',
         className,
       )}
       {...props}
     >
-      {loading ? <Spinner size="sm" /> : null}
+      {loading && (
+        <Loader2 size={iconSizes[size]} className="animate-spin shrink-0" />
+      )}
       {children}
     </button>
   );

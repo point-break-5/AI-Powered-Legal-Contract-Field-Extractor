@@ -115,8 +115,8 @@ export default function TablePage() {
             ))}
           </select>
           <Button size="sm" loading={extracting} onClick={handleExtractAll}>
-            <Zap size={13} />
-            Re-extract All
+            {!extracting && <Zap size={13} />}
+            {extracting ? 'Extracting…' : 'Re-extract All'}
           </Button>
         </div>
 
