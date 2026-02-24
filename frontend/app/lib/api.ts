@@ -111,6 +111,17 @@ export interface EvaluationReport {
 
 export type LLMProvider = 'gemini' | 'grok' | 'deepseek';
 
+export type LogLevel = 'INFO' | 'WARNING' | 'ERROR';
+
+export interface ProjectLog {
+  id: number;
+  project_id: number;
+  level: LogLevel;
+  event_type: string;
+  message: string;
+  created_at: string;
+}
+
 export const LLM_PROVIDER_LABELS: Record<LLMProvider, string> = {
   gemini: 'Gemini 2.5 Flash',
   grok: 'Grok (xAI)',
@@ -190,6 +201,8 @@ export const api = {
         field_key,
         provider,
       }),
+    clearAll: (projectId: number) =>
+      request<void>('DELETE', `/projects/${projectId}/extract/all`),
   },
 
   review: {
@@ -231,5 +244,15 @@ export const api = {
     },
     report: (projectId: number) =>
       request<EvaluationReport>('GET', `/projects/${projectId}/evaluation/report`),
+  },
+
+  logs: {
+    list: (projectId: number, level?: LogLevel) =>
+      request<ProjectLog[]>(
+        'GET',
+        `/projects/${projectId}/logs${level ? `?level=${level}` : ''}`,
+      ),
+    clear: (projectId: number) =>
+      request<void>('DELETE', `/projects/${projectId}/logs`),
   },
 };

@@ -47,6 +47,12 @@ class ReviewStatus(str, enum.Enum):
     STALE = "STALE"
 
 
+class LogLevel(str, enum.Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -155,4 +161,17 @@ class EvaluationLabel(Base):
     document_filename = Column(String(500), nullable=False)
     field_key = Column(String(255), nullable=False)
     expected_value = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProjectLog(Base):
+    """Activity log for tracking file uploads, removals, extraction events, etc."""
+
+    __tablename__ = "project_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    level = Column(Enum(LogLevel), default=LogLevel.INFO, nullable=False)
+    event_type = Column(String(64), nullable=False)  # e.g. DOCUMENT_UPLOADED
+    message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

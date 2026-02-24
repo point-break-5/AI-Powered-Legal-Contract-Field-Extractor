@@ -8,6 +8,7 @@ from src.models import Document, ParseStatus, Project
 from src.schemas import DocumentResponse
 from src.services.parser import parse_document
 from src.utils import is_supported_format
+from src.api.logs import write_log
 
 router = APIRouter(prefix="/projects", tags=["documents"])
 
@@ -72,10 +73,18 @@ async def upload_document(
     except Exception as e:
         doc.parse_status = ParseStatus.ERROR
         db.commit()
+        write_log(
+            db, project_id, "ERROR", "DOCUMENT_UPLOAD_FAILED",
+            f"Failed to parse '{file.filename}': {str(e)}",
+        )
         raise HTTPException(status_code=422, detail=f"Failed to parse document: {str(e)}")
 
     db.commit()
     db.refresh(doc)
+    write_log(
+        db, project_id, "INFO", "DOCUMENT_UPLOADED",
+        f"Uploaded '{file.filename}' ({ext.upper()}, {len(content):,} bytes)",
+    )
     return doc
 
 
@@ -119,5 +128,7 @@ def delete_document(project_id: int, document_id: int, db: Session = Depends(get
     if os.path.exists(save_path):
         os.remove(save_path)
 
+    filename = doc.filename
     db.delete(doc)
     db.commit()
+    write_log(db, project_id, "INFO", "DOCUMENT_REMOVED", f"Removed '{filename}'")

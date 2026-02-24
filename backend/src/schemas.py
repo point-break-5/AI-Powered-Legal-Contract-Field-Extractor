@@ -97,8 +97,19 @@ class ReviewUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Table (docs × fields matrix)
+# Activity Log
 # ---------------------------------------------------------------------------
+
+
+class ProjectLogResponse(BaseModel):
+    id: int
+    project_id: int
+    level: str
+    event_type: str
+    message: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------------------

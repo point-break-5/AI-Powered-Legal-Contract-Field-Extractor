@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.db import create_tables
-from src.api import projects, documents, templates, extraction, review, export, evaluation
+from src.api import projects, documents, templates, extraction, review, export, evaluation, logs
 
 
 @asynccontextmanager
@@ -36,6 +36,7 @@ app.include_router(extraction.router)
 app.include_router(review.router)
 app.include_router(export.router)
 app.include_router(evaluation.router)
+app.include_router(logs.router)
 
 
 @app.get("/")

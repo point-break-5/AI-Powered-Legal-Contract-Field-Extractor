@@ -3,14 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { FileText, Settings, Table2, BarChart2, ChevronLeft, Scale } from 'lucide-react';
+import { FileText, Settings, Table2, BarChart2, ChevronLeft, Scale, ScrollText } from 'lucide-react';
 import { api } from '@/lib/api';
 
 const NAV_ITEMS = [
-  { segment: 'docs',     icon: FileText, label: 'Documents'    },
-  { segment: 'template', icon: Settings, label: 'Template'     },
-  { segment: 'table',    icon: Table2,   label: 'Review Table' },
-  { segment: 'eval',     icon: BarChart2,label: 'Evaluate'     },
+  { segment: 'docs',     icon: FileText,   label: 'Documents'    },
+  { segment: 'template', icon: Settings,   label: 'Template'     },
+  { segment: 'table',    icon: Table2,     label: 'Review Table' },
+  { segment: 'eval',     icon: BarChart2,  label: 'Evaluate'     },
+  { segment: 'logs',     icon: ScrollText, label: 'Logs'         },
 ];
 
 export function ProjectShell({ children }: { children: React.ReactNode }) {

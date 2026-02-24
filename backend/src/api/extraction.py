@@ -6,6 +6,7 @@ from src.db import get_db
 from src.models import Document, ExtractionRecord, FieldTemplate, Project
 from src.schemas import ExtractionRecordResponse
 from src.services.extraction import extract_all, extract_single
+from src.api.logs import write_log
 
 router = APIRouter(prefix="/projects", tags=["extraction"])
 
@@ -30,10 +31,17 @@ def trigger_extract_all(
     try:
         records = extract_all(db=db, project_id=project_id, provider=provider)
     except ValueError as e:
+        write_log(db, project_id, "ERROR", "EXTRACTION_FAILED", str(e))
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
+        write_log(db, project_id, "ERROR", "EXTRACTION_FAILED", str(e))
         raise HTTPException(status_code=502, detail=str(e))
 
+    doc_count = len({r.document_id for r in records})
+    write_log(
+        db, project_id, "INFO", "EXTRACTION_COMPLETED",
+        f"Extracted {len(records)} record(s) across {doc_count} document(s) using {provider}",
+    )
     return [_to_response(r) for r in records]
 
 
@@ -72,10 +80,22 @@ def trigger_extract_single(
             provider=payload.provider,
         )
     except ValueError as e:
+        write_log(
+            db, project_id, "ERROR", "FIELD_EXTRACTION_FAILED",
+            f"Field '{payload.field_key}' on doc #{payload.document_id}: {str(e)}",
+        )
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
+        write_log(
+            db, project_id, "ERROR", "FIELD_EXTRACTION_FAILED",
+            f"Field '{payload.field_key}' on doc #{payload.document_id}: {str(e)}",
+        )
         raise HTTPException(status_code=502, detail=str(e))
 
+    write_log(
+        db, project_id, "INFO", "FIELD_EXTRACTED",
+        f"Re-extracted field '{payload.field_key}' on doc #{payload.document_id} using {payload.provider}",
+    )
     return _to_response(record)
 
 
@@ -97,6 +117,7 @@ def clear_all_extractions(
             ExtractionRecord.document_id.in_(doc_ids)
         ).delete(synchronize_session="fetch")
         db.commit()
+    write_log(db, project_id, "WARNING", "EXTRACTION_CLEARED", "All extraction records cleared")
     return None
 
 
