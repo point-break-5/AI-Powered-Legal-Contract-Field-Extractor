@@ -13,6 +13,7 @@ _ALLOWED_REVIEW_STATUSES = {
     ReviewStatus.CONFIRMED,
     ReviewStatus.REJECTED,
     ReviewStatus.MANUAL_UPDATED,
+    ReviewStatus.PENDING,
 }
 
 
@@ -75,6 +76,10 @@ def review_record(
             )
         # Store alongside AI result — never overwrite value / normalized_value
         record.manual_value = payload.manual_value
+
+    if new_status == ReviewStatus.PENDING:
+        # Clear action — reset manual override
+        record.manual_value = None
 
     record.review_status = new_status
     db.commit()

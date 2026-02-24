@@ -34,7 +34,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         {/* Brand / back */}
         <div className="px-3 h-14 flex items-center gap-2 border-b border-[var(--ash-gray)]">
           <Link
-            href="/"
+            href="/projects"
             title="All Projects"
             className="p-1 rounded-[var(--radius-sm)] text-[var(--ash-dark)] hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors shrink-0"
           >

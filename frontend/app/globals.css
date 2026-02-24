@@ -81,6 +81,18 @@ body {
 }
 .col-drop-flash { animation: colDropFlash 0.75s ease-out forwards; }
 
+/* Landing page hero */
+.landing-hero {
+  background: linear-gradient(150deg, #0c0f16 0%, #0f1520 45%, #0b1628 100%);
+  min-height: 90vh;
+}
+.landing-dots {
+  background-image: radial-gradient(circle, rgba(91,127,229,0.18) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 100%);
+}
+
 /* Shimmer for loading skeletons */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
