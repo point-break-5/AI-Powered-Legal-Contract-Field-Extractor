@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate, X } from 'lucide-react';
+import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate, X, Pencil } from 'lucide-react';
 import { api, type FieldDefinition, type Template } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -112,6 +112,24 @@ const PRESETS: { id: string; label: string; description: string; fields: FieldDe
   },
 ];
 
+const CUSTOM_PRESETS_KEY = 'legal_extractor_custom_presets';
+
+interface CustomPreset {
+  id: string;
+  label: string;
+  fields: FieldDefinition[];
+}
+
+function loadCustomPresets(): CustomPreset[] {
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_PRESETS_KEY) ?? '[]');
+  } catch { return []; }
+}
+
+function saveCustomPresets(presets: CustomPreset[]): void {
+  localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets));
+}
+
 export default function TemplatePage() {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
@@ -122,6 +140,47 @@ export default function TemplatePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+
+  // Custom presets (persisted in localStorage)
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>(() =>
+    typeof window !== 'undefined' ? loadCustomPresets() : []
+  );
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  function saveAsPreset() {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const hasFields = fields.some(f => f.key.trim());
+    if (!hasFields) { setError('Add at least one field before saving a preset.'); return; }
+    const preset: CustomPreset = {
+      id: Date.now().toString(),
+      label: name,
+      fields: fields.filter(f => f.key.trim()),
+    };
+    const updated = [...customPresets, preset];
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setNewPresetName('');
+    setShowSavePreset(false);
+  }
+
+  function deleteCustomPreset(id: string) {
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+  }
+
+  function commitRename(id: string) {
+    const name = renameValue.trim();
+    if (!name) { setRenamingId(null); return; }
+    const updated = customPresets.map(p => p.id === id ? { ...p, label: name } : p);
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setRenamingId(null);
+  }
 
   useEffect(() => {
     api.template.get(projectId)
@@ -227,11 +286,51 @@ export default function TemplatePage() {
 
       {/* Presets */}
       <div className="mb-5 bg-white border border-[var(--ash-gray)] rounded-[var(--radius-xl)] p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <LayoutTemplate size={14} className="text-[var(--accent-blue)]" />
-          <span className="text-xs font-semibold text-[var(--ash-charcoal)]">Presets</span>
-          <span className="text-[11px] text-[var(--ash-dark)]">— click to load a predefined field set</span>
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <LayoutTemplate size={14} className="text-[var(--accent-blue)]" />
+            <span className="text-xs font-semibold text-[var(--ash-charcoal)]">Presets</span>
+            <span className="text-[11px] text-[var(--ash-dark)]">— click to load</span>
+          </div>
+          <button
+            onClick={() => { setShowSavePreset(v => !v); setNewPresetName(''); }}
+            className="flex items-center gap-1 text-[11px] font-medium text-[var(--accent-blue)] hover:text-[var(--accent-blue)]/80 px-2 py-1 rounded-[var(--radius-sm)] hover:bg-[var(--accent-blue)]/8 transition-colors"
+          >
+            <Save size={11} />
+            Save as Preset
+          </button>
         </div>
+
+        {/* Save-as-preset inline form */}
+        {showSavePreset && (
+          <div className="mb-3 flex items-center gap-2 p-2.5 bg-[var(--ash-light)] rounded-[var(--radius-md)] border border-[var(--ash-gray)] animate-fade-in">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Preset name…"
+              value={newPresetName}
+              onChange={e => setNewPresetName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveAsPreset(); if (e.key === 'Escape') setShowSavePreset(false); }}
+              className="flex-1 text-xs px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--ash-gray)] bg-white text-[var(--ash-charcoal)] placeholder:text-[var(--ash-dark)] focus:outline-none focus-visible:border-[var(--accent-blue)] transition"
+            />
+            <button
+              onClick={saveAsPreset}
+              disabled={!newPresetName.trim()}
+              className="text-[11px] font-semibold px-2.5 py-1.5 rounded-[var(--radius-sm)] bg-[var(--accent-blue)] text-white disabled:opacity-40 hover:bg-[var(--accent-blue)]/90 transition-colors"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setShowSavePreset(false)}
+              className="p-1 rounded text-[var(--ash-medium)] hover:text-[var(--ash-charcoal)] transition-colors"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
+        {/* Built-in presets */}
         <div className="flex flex-wrap gap-2">
           {PRESETS.map(preset => (
             <button
@@ -251,6 +350,61 @@ export default function TemplatePage() {
             </button>
           ))}
         </div>
+
+        {/* Custom presets */}
+        {customPresets.length > 0 && (
+          <>
+            <div className="my-3 border-t border-[var(--ash-gray)]" />
+            <p className="text-[10px] font-semibold text-[var(--ash-medium)] uppercase tracking-wide mb-2">My Presets</p>
+            <div className="flex flex-wrap gap-2">
+              {customPresets.map(preset => (
+                <div
+                  key={preset.id}
+                  className="group flex flex-col items-start px-3 py-2 rounded-[var(--radius-md)] border border-[var(--accent-blue)]/40 bg-[var(--accent-blue)]/4 text-left relative"
+                >
+                  {renamingId === preset.id ? (
+                    <input
+                      autoFocus
+                      type="text"
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') commitRename(preset.id); if (e.key === 'Escape') setRenamingId(null); }}
+                      onBlur={() => commitRename(preset.id)}
+                      className="text-xs font-semibold w-28 px-1 py-0 border-b border-[var(--accent-blue)] bg-transparent text-[var(--accent-blue)] focus:outline-none"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => loadPreset({ ...preset, description: '', id: preset.id })}
+                      className="text-xs font-semibold text-[var(--accent-blue)] text-left"
+                    >
+                      {preset.label}
+                    </button>
+                  )}
+                  <span className="text-[10px] text-[var(--ash-medium)] mt-1">
+                    {preset.fields.length} fields
+                  </span>
+                  {/* Rename + delete controls */}
+                  <div className="absolute top-1 right-1 hidden group-hover:flex items-center gap-0.5">
+                    <button
+                      onClick={() => { setRenamingId(preset.id); setRenameValue(preset.label); }}
+                      className="p-0.5 rounded text-[var(--ash-medium)] hover:text-[var(--accent-blue)] transition-colors"
+                      title="Rename"
+                    >
+                      <Pencil size={10} />
+                    </button>
+                    <button
+                      onClick={() => deleteCustomPreset(preset.id)}
+                      className="p-0.5 rounded text-[var(--ash-medium)] hover:text-[var(--accent-coral)] transition-colors"
+                      title="Delete"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Field list */}
