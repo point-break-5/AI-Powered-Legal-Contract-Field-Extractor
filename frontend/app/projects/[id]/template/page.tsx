@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate } from 'lucide-react';
+import { Plus, Trash2, Save, AlertCircle, Info, LayoutTemplate, X } from 'lucide-react';
 import { api, type FieldDefinition, type Template } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -192,10 +192,23 @@ export default function TemplatePage() {
             )}
           </p>
         </div>
-        <Button onClick={handleSave} loading={saving}>
-          <Save size={14} />
-          {saved ? 'Saved!' : 'Save Template'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (fields.length === 0 || (fields.length === 1 && !fields[0].key && !fields[0].description)) return;
+              if (confirm('Remove all fields from the template?')) setFields([emptyField()]);
+            }}
+            disabled={fields.length === 1 && !fields[0].key && !fields[0].description}
+          >
+            <X size={14} />
+            Clear All
+          </Button>
+          <Button onClick={handleSave} loading={saving}>
+            <Save size={14} />
+            {saved ? 'Saved!' : 'Save Template'}
+          </Button>
+        </div>
       </div>
 
       {error && (
