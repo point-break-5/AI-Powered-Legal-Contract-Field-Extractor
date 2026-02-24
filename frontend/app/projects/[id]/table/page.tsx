@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink } from 'lucide-react';
+import { Zap, Download, X, Check, XCircle, Pencil, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { api, type TableCell, type TableData, type ExtractionRecord, type LLMProvider, LLM_PROVIDER_LABELS } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -32,6 +32,9 @@ export default function TablePage() {
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv');
   const [exportScope, setExportScope] = useState<'all' | 'table'>('all');
   const panelRef = useRef<HTMLDivElement>(null);
+  const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [rowActioning, setRowActioning] = useState<string | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement>(null);
 
   const loadTable = useCallback(() => {
     setLoading(true);
@@ -42,6 +45,35 @@ export default function TablePage() {
   }, [projectId]);
 
   useEffect(() => { loadTable(); }, [loadTable]);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) {
+        setRowMenu(null);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [rowMenu]);
+
+  async function handleRowAction(fieldKey: string, status: 'CONFIRMED' | 'REJECTED') {
+    if (!tableData) return;
+    setRowMenu(null);
+    setRowActioning(fieldKey);
+    try {
+      const updates = tableData.documents
+        .map(doc => tableData.rows[fieldKey]?.[String(doc.id)])
+        .filter(cell => cell?.record_id != null)
+        .map(cell => api.review.update(projectId, cell!.record_id!, status));
+      await Promise.all(updates);
+      loadTable();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Bulk action failed');
+    } finally {
+      setRowActioning(null);
+    }
+  }
 
   async function handleExtractAll() {
     setExtracting(true);
@@ -153,7 +185,41 @@ export default function TablePage() {
                     className={fi % 2 === 0 ? 'bg-white' : 'bg-[var(--ash-white)]'}
                   >
                     <td className="sticky left-0 bg-inherit px-4 py-3 font-mono font-medium text-[var(--ash-deep)] border-b border-r border-[var(--ash-gray)] z-10">
-                      {fieldKey}
+                      <div className="flex items-center justify-between gap-2 group">
+                        <span className="truncate">{fieldKey}</span>
+                        <div
+                          className="relative shrink-0"
+                          ref={rowMenu === fieldKey ? rowMenuRef : null}
+                        >
+                          <button
+                            onClick={e => { e.stopPropagation(); setRowMenu(prev => prev === fieldKey ? null : fieldKey); }}
+                            className="p-1 rounded text-[var(--ash-medium)] opacity-0 group-hover:opacity-100 hover:text-[var(--ash-charcoal)] hover:bg-[var(--ash-gray)] transition-all"
+                            title="Row actions"
+                          >
+                            {rowActioning === fieldKey
+                              ? <Spinner size="sm" />
+                              : <MoreHorizontal size={13} />}
+                          </button>
+                          {rowMenu === fieldKey && (
+                            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-[var(--ash-gray)] rounded-[var(--radius-md)] shadow-lg min-w-[130px] py-1 animate-fade-in">
+                              <button
+                                onClick={() => handleRowAction(fieldKey, 'CONFIRMED')}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--ash-charcoal)] hover:bg-[var(--accent-teal)]/10 hover:text-[var(--accent-teal)] transition-colors"
+                              >
+                                <Check size={12} />
+                                Confirm All
+                              </button>
+                              <button
+                                onClick={() => handleRowAction(fieldKey, 'REJECTED')}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--ash-charcoal)] hover:bg-[var(--accent-coral)]/10 hover:text-[var(--accent-coral)] transition-colors"
+                              >
+                                <XCircle size={12} />
+                                Reject All
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     {tableData.documents.map(doc => {
                       const cell = tableData.rows[fieldKey]?.[String(doc.id)] ?? null;
