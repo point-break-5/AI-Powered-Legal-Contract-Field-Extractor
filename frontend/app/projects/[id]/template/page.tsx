@@ -206,9 +206,9 @@ export default function TemplatePage() {
       )}
 
       {template && (
-        <div className="mb-4 flex items-start gap-2 text-xs text-[var(--ash-dark)] bg-[var(--ash-light)] border border-[var(--ash-gray)] px-4 py-3 rounded-[var(--radius-md)]">
-          <Info size={13} className="mt-0.5 shrink-0" />
-          Saving a new version will mark existing extraction records as <strong className="text-[var(--ash-deep)]">STALE</strong>. Use <strong className="text-[var(--ash-deep)]">Re-extract All</strong> on the Review Table page to refresh them.
+        <div className="mb-4 flex items-center gap-2 text-xs text-[var(--ash-dark)] bg-[var(--ash-light)] border border-[var(--ash-gray)] px-4 py-3 rounded-[var(--radius-md)]">
+          <Info size={13} className="shrink-0" />
+          <p>Saving a new version will mark existing extraction records as <strong className="text-[var(--ash-deep)]">STALE</strong>. Use <strong className="text-[var(--ash-deep)]">Re-extract All</strong> on the Review Table page to refresh them.</p>
         </div>
       )}
 
