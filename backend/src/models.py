@@ -63,7 +63,7 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    status = Column(Enum(ProjectStatus, native_enum=False), default=ProjectStatus.PENDING, nullable=False)
+    status = Column(Enum(ProjectStatus), default=ProjectStatus.PENDING, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -80,7 +80,7 @@ class Document(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     filename = Column(String(500), nullable=False)
     format = Column(String(20), nullable=False)  # pdf, docx, html, txt
-    parse_status = Column(Enum(ParseStatus, native_enum=False), default=ParseStatus.QUEUED, nullable=False)
+    parse_status = Column(Enum(ParseStatus), default=ParseStatus.QUEUED, nullable=False)
     parsed_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -131,7 +131,7 @@ class ExtractionRecord(Base):
 
     # Review
     review_status = Column(
-        Enum(ReviewStatus, native_enum=False), default=ReviewStatus.PENDING, nullable=False
+        Enum(ReviewStatus), default=ReviewStatus.PENDING, nullable=False
     )
     manual_value = Column(Text, nullable=True)  # stored alongside AI result, never overwrites
 
@@ -171,7 +171,7 @@ class ProjectLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    level = Column(Enum(LogLevel, native_enum=False), default=LogLevel.INFO, nullable=False)
+    level = Column(Enum(LogLevel), default=LogLevel.INFO, nullable=False)
     event_type = Column(String(64), nullable=False)  # e.g. DOCUMENT_UPLOADED
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
