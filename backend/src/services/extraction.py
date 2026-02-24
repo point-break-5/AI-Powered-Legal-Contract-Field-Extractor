@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.models import Document, ExtractionRecord, FieldTemplate, ParseStatus, ReviewStatus
-from src.services.llm import extract_field
+from src.services.llm import extract_field, extract_fields_batch
 
 
 MISSING_DATA_THRESHOLD = 0.3
@@ -102,19 +102,32 @@ def extract_all(db: Session, project_id: int, provider: str = "gemini") -> list[
     errors = []
 
     for doc in documents:
-        for field in template.fields:
-            try:
-                record = extract_single(
-                    db=db,
-                    document_id=doc.id,
-                    field_key=field["key"],
-                    field_type=field.get("type", "text"),
-                    field_description=field.get("description", ""),
-                    provider=provider,
-                )
+        try:
+            # ONE LLM call for all fields in this document
+            batch = extract_fields_batch(
+                document_text=doc.parsed_text,
+                fields=template.fields,
+                provider=provider,
+            )
+            for field in template.fields:
+                fkey = field["key"]
+                result = batch.get(fkey, {})
+                record = _get_or_create_record(db, doc.id, fkey)
+                record.value = result.get("value")
+                record.raw_text = result.get("raw_text")
+                record.citations = result.get("citations") or []
+                record.confidence = result.get("confidence", 0.0)
+                record.normalized_value = result.get("normalized_value")
+                if record.value is None or record.confidence < MISSING_DATA_THRESHOLD:
+                    record.review_status = ReviewStatus.MISSING_DATA
+                else:
+                    record.review_status = ReviewStatus.PENDING
                 results.append(record)
-            except Exception as e:
-                errors.append(f"[doc={doc.id}, field={field['key']}] {e}")
+            db.commit()
+            for r in results[-len(template.fields):]:
+                db.refresh(r)
+        except Exception as e:
+            errors.append(f"[doc={doc.id}] {e}")
 
     if errors and not results:
         raise RuntimeError("All extractions failed:\n" + "\n".join(errors))
