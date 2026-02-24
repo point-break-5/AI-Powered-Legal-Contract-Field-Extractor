@@ -31,8 +31,15 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       {/* ── Sidebar ── */}
       <aside className="w-56 shrink-0 bg-white border-r border-[var(--ash-gray)] flex flex-col fixed top-0 bottom-0">
         {/* Brand / back */}
-        <div className="px-4 h-14 flex items-center gap-2.5 border-b border-[var(--ash-gray)]">
-          <Scale size={18} className="text-[var(--accent-blue)] shrink-0" />
+        <div className="px-3 h-14 flex items-center gap-2 border-b border-[var(--ash-gray)]">
+          <Link
+            href="/"
+            title="All Projects"
+            className="p-1 rounded-[var(--radius-sm)] text-[var(--ash-dark)] hover:text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors shrink-0"
+          >
+            <ChevronLeft size={16} />
+          </Link>
+          <Scale size={17} className="text-[var(--accent-blue)] shrink-0" />
           <span className="text-sm font-semibold text-[var(--ash-black)] truncate flex-1">
             {projectName || 'Loading…'}
           </span>
@@ -60,14 +67,8 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-[var(--ash-gray)]">
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 text-xs text-[var(--ash-dark)] hover:text-[var(--ash-charcoal)] transition-colors"
-          >
-            <ChevronLeft size={12} />
-            All Projects
-          </Link>
+        <div className="px-4 py-3 border-t border-[var(--ash-gray)] text-[10px] text-[var(--ash-medium)] text-center select-none">
+          AI Legal Extractor
         </div>
       </aside>
 
