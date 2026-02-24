@@ -10,13 +10,46 @@ import { Spinner } from '@/components/ui/Spinner';
 import { confidenceColor, friendlyError } from '@/lib/utils';
 import { ToastContainer, type ToastItem } from '@/components/ui/Toast';
 
+// ─── Module-level extraction tracker ────────────────────────────────────────
+// Lives outside the component so it survives client-side navigation.
+interface InFlight {
+  controller: AbortController;
+  listeners: Set<(error?: string) => void>;
+}
+const _extractions: Record<number, InFlight | undefined> = {};
+
+function _startExtraction(projectId: number): AbortController {
+  const controller = new AbortController();
+  _extractions[projectId] = { controller, listeners: new Set() };
+  return controller;
+}
+function _settleExtraction(projectId: number, error?: string) {
+  const entry = _extractions[projectId];
+  if (!entry) return;
+  delete _extractions[projectId];
+  entry.listeners.forEach(fn => fn(error));
+}
+function _subscribeExtraction(projectId: number, fn: (error?: string) => void): () => void {
+  const entry = _extractions[projectId];
+  if (!entry) { fn = () => {}; return () => {}; }
+  entry.listeners.add(fn);
+  return () => { entry.listeners.delete(fn); };
+}
+function _isExtracting(projectId: number): boolean {
+  return !!_extractions[projectId];
+}
+function _cancelExtraction(projectId: number) {
+  _extractions[projectId]?.controller.abort();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function TablePage() {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
 
   const [tableData, setTableData] = useState<TableData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [extracting, setExtracting] = useState(false);
+  const [extracting, setExtracting] = useState(() => _isExtracting(projectId));
   const [clearing, setClearing] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastId = useRef(0);
@@ -57,6 +90,18 @@ export default function TablePage() {
 
   useEffect(() => { loadTable(); }, [loadTable]);
 
+  // Re-attach to any in-flight extraction when component mounts after navigation
+  useEffect(() => {
+    if (!_isExtracting(projectId)) return;
+    setExtracting(true);
+    return _subscribeExtraction(projectId, (error) => {
+      setExtracting(false);
+      loadTable();
+      if (error) pushToast(friendlyError(error));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   useEffect(() => {
     if (!rowMenu) return;
     function onClickOutside(e: MouseEvent) {
@@ -87,14 +132,19 @@ export default function TablePage() {
   }
 
   async function handleExtractAll() {
+    if (_isExtracting(projectId)) return;
+    const controller = _startExtraction(projectId);
     setExtracting(true);
     try {
-      await api.extraction.extractAll(projectId, provider);
-      loadTable();
+      await api.extraction.extractAll(projectId, provider, controller.signal);
+      _settleExtraction(projectId);
     } catch (err: unknown) {
-      pushToast(friendlyError(err instanceof Error ? err.message : 'Extraction failed'));
-    } finally {
-      setExtracting(false);
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User cancelled — settle silently
+        _settleExtraction(projectId);
+      } else {
+        _settleExtraction(projectId, err instanceof Error ? err.message : 'Extraction failed');
+      }
     }
   }
 
@@ -171,10 +221,27 @@ export default function TablePage() {
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
-          <Button size="sm" loading={extracting} onClick={handleExtractAll}>
-            {!extracting && <Zap size={13} />}
-            {extracting ? 'Extracting…' : 'Re-extract All'}
-          </Button>
+          {extracting ? (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="shrink-0"
+                onClick={() => _cancelExtraction(projectId)}
+              >
+                <X size={13} />
+                Cancel
+              </Button>
+              <Button size="sm" loading className="shrink-0" disabled>
+                Extracting…
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" onClick={handleExtractAll} className="shrink-0">
+              <Zap size={13} />
+              Re-extract All
+            </Button>
+          )}
         </div>
 
         {/* Table */}

@@ -137,6 +137,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   isFormData = false,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {};
   // Don't set Content-Type for FormData — browser sets it with boundary
@@ -145,6 +146,7 @@ async function request<T>(
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
+    signal,
     body: isFormData
       ? (body as FormData)
       : body !== undefined
@@ -193,8 +195,8 @@ export const api = {
   },
 
   extraction: {
-    extractAll: (projectId: number, provider: LLMProvider = 'gemini') =>
-      request<ExtractionRecord[]>('POST', `/projects/${projectId}/extract/all?provider=${provider}`),
+    extractAll: (projectId: number, provider: LLMProvider = 'gemini', signal?: AbortSignal) =>
+      request<ExtractionRecord[]>('POST', `/projects/${projectId}/extract/all?provider=${provider}`, undefined, false, signal),
     extractField: (projectId: number, document_id: number, field_key: string, provider: LLMProvider = 'gemini') =>
       request<ExtractionRecord>('POST', `/projects/${projectId}/extract/field`, {
         document_id,
