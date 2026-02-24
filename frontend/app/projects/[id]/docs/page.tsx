@@ -17,24 +17,37 @@ export default function DocsPage() {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     api.documents.list(projectId).then(setDocs).finally(() => setLoading(false));
   }, [projectId]);
 
-  async function uploadFile(file: File) {
-    setError('');
+  async function uploadFiles(files: File[]) {
+    if (files.length === 0) return;
+    setErrors([]);
     setUploading(true);
-    try {
-      const doc = await api.documents.upload(projectId, file);
-      setDocs(prev => [...prev, doc]);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-    } finally {
-      setUploading(false);
+    setUploadProgress({ current: 0, total: files.length });
+
+    const newDocs: Document[] = [];
+    const newErrors: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress({ current: i + 1, total: files.length });
+      try {
+        const doc = await api.documents.upload(projectId, files[i]);
+        newDocs.push(doc);
+      } catch (err: unknown) {
+        newErrors.push(`${files[i].name}: ${err instanceof Error ? err.message : 'Upload failed'}`);
+      }
     }
+
+    if (newDocs.length > 0) setDocs(prev => [...prev, ...newDocs]);
+    if (newErrors.length > 0) setErrors(newErrors);
+    setUploading(false);
+    setUploadProgress(null);
   }
 
   async function handleDelete(docId: number) {
@@ -46,8 +59,8 @@ export default function DocsPage() {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) uploadFiles(files);
   }
 
   return (
@@ -75,28 +88,44 @@ export default function DocsPage() {
           ref={fileRef}
           type="file"
           accept=".pdf,.docx,.html,.htm,.txt"
+          multiple
           className="hidden"
-          onChange={e => e.target.files?.[0] && uploadFile(e.target.files[0])}
+          onChange={e => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) uploadFiles(files);
+            e.target.value = '';
+          }}
         />
         {uploading ? (
-          <Spinner size="lg" />
+          <div className="flex flex-col items-center gap-2">
+            <Spinner size="lg" />
+            {uploadProgress && (
+              <p className="text-xs text-[var(--ash-dark)]">
+                Uploading {uploadProgress.current} of {uploadProgress.total}…
+              </p>
+            )}
+          </div>
         ) : (
           <>
             <Upload size={28} className="text-[var(--ash-medium)] mb-3" />
             <p className="text-sm font-medium text-[var(--ash-charcoal)]">
-              Drop a file here or click to upload
+              Drop files here or click to upload
             </p>
             <p className="text-xs text-[var(--ash-dark)] mt-1">
-              PDF · DOCX · HTML · TXT
+              PDF · DOCX · HTML · TXT · Multiple files supported
             </p>
           </>
         )}
       </div>
 
-      {error && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-[var(--accent-coral)] bg-[var(--accent-coral)]/10 border border-[var(--accent-coral)]/30 px-4 py-3 rounded-[var(--radius-md)]">
-          <AlertCircle size={14} />
-          {error}
+      {errors.length > 0 && (
+        <div className="mb-4 flex flex-col gap-1.5 text-sm text-[var(--accent-coral)] bg-[var(--accent-coral)]/10 border border-[var(--accent-coral)]/30 px-4 py-3 rounded-[var(--radius-md)]">
+          {errors.map((e, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              <span>{e}</span>
+            </div>
+          ))}
         </div>
       )}
 
