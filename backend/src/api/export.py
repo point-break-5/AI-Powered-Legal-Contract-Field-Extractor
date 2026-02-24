@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from collections import defaultdict
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,54 +21,30 @@ _MEDIA_TYPES = {
 
 
 def _build_matrix(rows, field_order: list[str], doc_names: list[str]) -> pd.DataFrame:
-    """
-    Build a matrix DataFrame:
-      rows    = fields
-      columns = documents
-      values  = display value (manual_value ?? normalized_value ?? ai_value) + [status]
-    """
-    # cell_data[field_key][doc_name] = display string
+    """Build a matrix DataFrame: rows=fields, columns=documents."""
+    from collections import defaultdict
     cell_data: dict[str, dict[str, str]] = defaultdict(dict)
-
-    for rec, filename in rows:
+    for rec, fname in rows:
         display = rec.manual_value or rec.normalized_value or rec.value or ""
         status = rec.review_status.value
-        cell_data[rec.field_key][filename] = f"{display}" if display else f"[{status}]"
-
+        cell_data[rec.field_key][fname] = display if display else f"[{status}]"
     matrix_rows = []
     for fkey in field_order:
-        row = {"field": fkey}
+        row: dict[str, str] = {"field": fkey}
         for doc in doc_names:
             row[doc] = cell_data[fkey].get(doc, "")
         matrix_rows.append(row)
-
-    cols = ["field"] + doc_names
-    return pd.DataFrame(matrix_rows, columns=cols)
+    return pd.DataFrame(matrix_rows, columns=["field"] + doc_names)
 
 
-def _build_detail(rows) -> pd.DataFrame:
-    """Long-format detail sheet with all metadata."""
-    data = [
-        {
-            "document": filename,
-            "field_key": rec.field_key,
-            "ai_value": rec.value,
-            "normalized_value": rec.normalized_value,
-            "confidence": rec.confidence,
-            "review_status": rec.review_status.value,
-            "manual_value": rec.manual_value,
-            "citations": "; ".join(
-                f"p{c.get('page','?')}: {c.get('excerpt','')}"
-                for c in rec.citations
-            ),
-        }
-        for rec, filename in rows
-    ]
-    return pd.DataFrame(
-        data,
-        columns=["document", "field_key", "ai_value", "normalized_value",
-                 "confidence", "review_status", "manual_value", "citations"],
-    )
+def _auto_width(ws) -> None:
+    """Auto-fit Excel column widths."""
+    for col_cells in ws.columns:
+        max_len = max(
+            (len(str(cell.value)) if cell.value is not None else 0)
+            for cell in col_cells
+        )
+        ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 80)
 
 
 @router.get("/{project_id}/export")
@@ -78,10 +53,10 @@ def export_table(
     format: str = Query(default="csv", description="csv or xlsx"),
     db: Session = Depends(get_db),
 ):
-    """Export the extraction matrix matching the Review Table layout.
+    """Export the extraction matrix as CSV or Excel.
 
-    CSV  — matrix sheet only (fields × documents).
-    XLSX — Sheet 1: matrix view; Sheet 2: full detail with citations/confidence.
+    Columns: document | field_key | ai_value | normalized_value |
+             confidence | review_status | manual_value | citations
     """
     fmt = format.lower()
     if fmt not in _MEDIA_TYPES:
@@ -95,16 +70,7 @@ def export_table(
     if not template:
         raise HTTPException(status_code=404, detail="No field template found for this project")
 
-    field_order = [f["key"] for f in template.fields]
-
-    docs = (
-        db.query(Document)
-        .filter(Document.project_id == project_id, Document.parse_status == ParseStatus.DONE)
-        .order_by(Document.filename)
-        .all()
-    )
-    doc_names = [d.filename for d in docs]
-
+    # Fetch all extraction records joined with document info
     rows = (
         db.query(ExtractionRecord, Document.filename)
         .join(Document, ExtractionRecord.document_id == Document.id)
@@ -113,34 +79,66 @@ def export_table(
         .all()
     )
 
+    if not rows:
+        # Return empty-but-valid file rather than 404
+        data = []
+    else:
+        data = [
+            {
+                "document": filename,
+                "field_key": rec.field_key,
+                "ai_value": rec.value,
+                "normalized_value": rec.normalized_value,
+                "confidence": rec.confidence,
+                "review_status": rec.review_status.value,
+                "manual_value": rec.manual_value,
+                # Flatten citations to a readable string for tabular export
+                "citations": "; ".join(
+                    f"p{c.get('page','?')}: {c.get('excerpt','')}"
+                    for c in rec.citations
+                ),
+            }
+            for rec, filename in rows
+        ]
+
+    df = pd.DataFrame(
+        data,
+        columns=[
+            "document",
+            "field_key",
+            "ai_value",
+            "normalized_value",
+            "confidence",
+            "review_status",
+            "manual_value",
+            "citations",
+        ],
+    )
+
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in project.name)
     filename = f"{safe_name}_extraction.{fmt}"
 
-    matrix_df = _build_matrix(rows, field_order, doc_names)
-
     if fmt == "csv":
-        content = matrix_df.to_csv(index=False).encode("utf-8")
+        content = df.to_csv(index=False).encode("utf-8")
         return StreamingResponse(
             io.BytesIO(content),
             media_type=_MEDIA_TYPES["csv"],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # xlsx — two sheets
-    detail_df = _build_detail(rows)
+    # xlsx
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        matrix_df.to_excel(writer, index=False, sheet_name="Review Table")
-        detail_df.to_excel(writer, index=False, sheet_name="Full Detail")
+        df.to_excel(writer, index=False, sheet_name="Extractions")
 
-        for sheet_name in ("Review Table", "Full Detail"):
-            ws = writer.sheets[sheet_name]
-            for col_cells in ws.columns:
-                max_len = max(
-                    (len(str(cell.value)) if cell.value is not None else 0)
-                    for cell in col_cells
-                )
-                ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
+        # Auto-fit column widths
+        ws = writer.sheets["Extractions"]
+        for col_cells in ws.columns:
+            max_len = max(
+                (len(str(cell.value)) if cell.value is not None else 0)
+                for cell in col_cells
+            )
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 80)
 
     buf.seek(0)
     return StreamingResponse(
@@ -148,4 +146,3 @@ def export_table(
         media_type=_MEDIA_TYPES["xlsx"],
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-

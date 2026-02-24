@@ -28,6 +28,9 @@ export default function TablePage() {
   const [manualValue, setManualValue] = useState('');
   const [showManual, setShowManual] = useState(false);
   const [provider, setProvider] = useState<LLMProvider>('gemini');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv');
+  const [exportScope, setExportScope] = useState<'all' | 'table'>('all');
   const panelRef = useRef<HTMLDivElement>(null);
 
   const loadTable = useCallback(() => {
@@ -97,18 +100,10 @@ export default function TablePage() {
           {error && (
             <span className="text-xs text-[var(--accent-coral)] flex-1">{error}</span>
           )}
-          <a href={api.export.url(projectId, 'csv')} download className="shrink-0">
-            <Button variant="secondary" size="sm">
-              <Download size={13} />
-              CSV
-            </Button>
-          </a>
-          <a href={api.export.url(projectId, 'xlsx')} download className="shrink-0">
-            <Button variant="secondary" size="sm">
-              <Download size={13} />
-              Excel
-            </Button>
-          </a>
+          <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setShowExportModal(true)}>
+            <Download size={13} />
+            Export
+          </Button>
           <select
             value={provider}
             onChange={e => setProvider(e.target.value as LLMProvider)}
@@ -205,7 +200,7 @@ export default function TablePage() {
       {activeCell && (
         <div
           ref={panelRef}
-          className="w-72 shrink-0 bg-white border-l border-[var(--ash-gray)] flex flex-col animate-fade-in"
+          className="w-72 shrink-0 bg-white border-l border-[var(--ash-gray)] flex flex-col animate-fade-in overflow-y-auto"
         >
           {/* Panel header */}
           <div className="px-4 py-3 border-b border-[var(--ash-gray)] flex items-start justify-between">
@@ -223,7 +218,7 @@ export default function TablePage() {
           </div>
 
           {/* Values */}
-          <div className="px-4 py-4 flex flex-col gap-3 flex-1 overflow-y-auto min-h-0">
+          <div className="px-4 py-4 flex flex-col gap-3 flex-1">
             <Row label="AI Value" value={activeCell.cell.value} />
             <Row label="Normalised" value={activeCell.cell.normalized_value} />
             {activeCell.cell.manual_value && (
@@ -326,6 +321,111 @@ export default function TablePage() {
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Export Modal ── */}
+      {showExportModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => setShowExportModal(false)}
+        >
+          <div
+            className="bg-white rounded-[var(--radius-lg)] shadow-xl w-80 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-[var(--ash-gray)] flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[var(--ash-black)]">Export</h2>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="p-1 rounded hover:bg-[var(--ash-light)] text-[var(--ash-dark)] transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 flex flex-col gap-5">
+              {/* Format row */}
+              <div>
+                <p className="text-xs font-semibold text-[var(--ash-charcoal)] mb-2">Format</p>
+                <div className="flex gap-2">
+                  {(['csv', 'xlsx'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setExportFormat(f)}
+                      className={`flex-1 py-2 rounded-[var(--radius-md)] text-xs font-medium border transition ${
+                        exportFormat === f
+                          ? 'bg-[var(--accent-blue)] text-white border-[var(--accent-blue)]'
+                          : 'bg-white text-[var(--ash-charcoal)] border-[var(--ash-gray)] hover:bg-[var(--ash-light)]'
+                      }`}
+                    >
+                      {f === 'csv' ? 'CSV' : 'Excel'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Scope row */}
+              <div>
+                <p className="text-xs font-semibold text-[var(--ash-charcoal)] mb-2">Content</p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setExportScope('all')}
+                    className={`text-left px-3 py-2.5 rounded-[var(--radius-md)] border transition ${
+                      exportScope === 'all'
+                        ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/5'
+                        : 'border-[var(--ash-gray)] hover:bg-[var(--ash-light)]'
+                    }`}
+                  >
+                    <p className={`text-xs font-medium ${
+                      exportScope === 'all' ? 'text-[var(--accent-blue)]' : 'text-[var(--ash-black)]'
+                    }`}>
+                      Export all values
+                    </p>
+                    <p className="text-[11px] text-[var(--ash-dark)] mt-0.5">
+                      Full detail — AI values, confidence, citations
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => setExportScope('table')}
+                    className={`text-left px-3 py-2.5 rounded-[var(--radius-md)] border transition ${
+                      exportScope === 'table'
+                        ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/5'
+                        : 'border-[var(--ash-gray)] hover:bg-[var(--ash-light)]'
+                    }`}
+                  >
+                    <p className={`text-xs font-medium ${
+                      exportScope === 'table' ? 'text-[var(--accent-blue)]' : 'text-[var(--ash-black)]'
+                    }`}>
+                      Just export this table
+                    </p>
+                    <p className="text-[11px] text-[var(--ash-dark)] mt-0.5">
+                      Matrix view matching the Review Table
+                    </p>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-[var(--ash-gray)] flex gap-2 justify-end">
+              <Button size="sm" variant="secondary" onClick={() => setShowExportModal(false)}>
+                Cancel
+              </Button>
+              <a
+                href={api.export.url(projectId, exportFormat, exportScope)}
+                download
+                onClick={() => setShowExportModal(false)}
+              >
+                <Button size="sm">
+                  <Download size={13} />
+                  Download
+                </Button>
+              </a>
+            </div>
+          </div>
         </div>
       )}
     </div>

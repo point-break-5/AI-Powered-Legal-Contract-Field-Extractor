@@ -214,8 +214,8 @@ export const api = {
   },
 
   export: {
-    url: (projectId: number, format: 'csv' | 'xlsx') =>
-      `${BASE}/projects/${projectId}/export?format=${format}`,
+    url: (projectId: number, format: 'csv' | 'xlsx', scope: 'all' | 'table' = 'all') =>
+      `${BASE}/projects/${projectId}/export?format=${format}&scope=${scope}`,
   },
 
   evaluation: {
